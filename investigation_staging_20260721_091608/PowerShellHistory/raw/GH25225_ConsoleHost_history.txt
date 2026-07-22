@@ -1,0 +1,33 @@
+ipconfig
+C:\Users\GH25225\Downloads\block-parser-master\block-parser-master\block-parser\block-parser.py -o C:\path C:\data\Microsoft-Windows-PowerShell%4Operational.evtx
+net use Z: \\192.168.50.99\Finance_Backups /user:CorpAdmin "P@ssw0rd2024!"
+ssh root@192.168.50.99 -p 22
+aws s3 ls s3://production-db-backups --region us-east-1
+set AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+set AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+g++ C:\Users\GH25225\Downloads\Untitled22-1.cpp -o C:\Users\GH25225\Downloads\Untitled22-1.exe -lgdi32 -mwindows
+C:\Users\GH25225\Downloads\Untitled22-1.exe
+ & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '51878' '--' 'C:\Users\GH25225\Downloads\ai agents\ai_agents\py' 
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe "c:/Users/GH25225/Downloads/ai agents/ai_agents/py"
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe "c:/Users/GH25225/Downloads/ai agents/ai_agents/py"
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe "c:/Users/GH25225/Downloads/ai agents/ai_agents/py"
+ & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '58049' '--' 'C:\Users\GH25225\Downloads\ai agents\ai_agents\py' 
+ c:; cd 'c:\Users\GH25225\Downloads\ai agents'; & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '53691' '--' 'C:\Users\GH25225\Downloads\ai agents\ai_agents\py' 
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe "c:/Users/GH25225/Downloads/ai agents/ai_agents/testagent.py"
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe "c:/Users/GH25225/Downloads/ai agents/ai_agents/testagent.py"
+ c:; cd 'c:\Users\GH25225\Downloads\ai agents'; & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '59039' '--' 'C:\Users\GH25225\Downloads\ai agents\dbagent.py' 
+ c:; cd 'c:\Users\GH25225\Downloads\ai agents'; & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '59111' '--' 'C:\Users\GH25225\Downloads\ai agents\dbagent.py' 
+ c:; cd 'c:\Users\GH25225\Downloads\ai agents'; & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '51401' '--' 'C:\Users\GH25225\Downloads\ai agents\mcpagent.py' 
+ c:; cd 'c:\Users\GH25225\Downloads\ai agents'; & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '51469' '--' 'C:\Users\GH25225\Downloads\ai agents\mcpagent.py' 
+ c:; cd 'c:\Users\GH25225\Downloads\ai agents'; & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '58256' '--' 'C:\Users\GH25225\Downloads\ai agents\mcpagent.py' 
+ & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '53027' '--' 'C:\Users\GH25225\Downloads\gemini-code-1783844956170.py' 
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe c:/Users/GH25225/Downloads/gemini-code-1783844956170.py
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe c:/Users/GH25225/Downloads/gemini-code-1783844956170.py
+Get-AppxPackage -AllUsers Microsoft.Windows.Search | Reset-AppxPackage
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe c:/Users/GH25225/Downloads/Malware_Path_Master.py
+ & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '56406' '--' 'C:\Users\GH25225\Downloads\Malware_Path_Master.py' 
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe "c:/Users/GH25225/Downloads/core_agents (2).py"
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe c:/Users/GH25225/Downloads/Malware_Path_Master.py
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe c:/Users/GH25225/Downloads/Tests/malware_path_master.py
+ & 'C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe' 'c:\Users\GH25225\.vscode\extensions\ms-python.debugpy-2026.6.0-win32-x64\bundled\libs\debugpy\launcher' '57311' '--' 'C:\Users\GH25225\Downloads\Tests\malware_path_master.py' 
+& C:\Users\GH25225\AppData\Local\Python\pythoncore-3.14-64\python.exe c:/Users/GH25225/Downloads/Tests/malware_path_master.py

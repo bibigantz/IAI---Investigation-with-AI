@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dynamic Code Loading Drill — Day 4 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+details { margin:10px 0; padding:8px 14px; background:var(--hint-bg); border-left:3px solid var(--hint-border); border-radius:3px; }
+details > summary { cursor:pointer; font-weight:600; color:var(--hint-border); }
+details[open] > summary { margin-bottom:8px; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.exercise { background:var(--accent-soft); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--accent); }
+.exercise h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Dynamic Code Loading Drill — Loading code that wasn't in the APK</h1>
+<p class="lede">An app can fetch a <code>.dex</code> or <code>.jar</code> file from the network at runtime, load it through <code>DexClassLoader</code>, and execute methods inside it — all with the host app's permissions. This drill shows the build pipeline (jar → dex with <code>d8</code>), the loading code, and why this pattern is so attractive to malware. Slides 12&ndash;15 of <em>Android Vulnerabilities.pptx</em>.</p>
+
+<div class="warn">
+  <strong>Before you start &mdash; what's provided vs. what you build.</strong>
+  <p>The host app is <em>already written and shipped with the lab in two forms</em>. You do <strong>not</strong> need to write or modify the host code shown in Section 3 &mdash; that section exists so you understand what the host app is doing when it loads your dex.</p>
+  <ul>
+    <li><strong>Recommended &mdash; pre-built APK (<code>dynamic_code_loader.apk</code>).</strong> Install it once. At every launch pass your dex's SHA-256 as a launch extra: <code>adb shell am start -n com.example.dynamiccodeloader/.MainActivity --es hash &lt;your-64-char-hex&gt;</code>. No Android Studio, no Gradle, no source edits. See <em>Plan B</em> at the top of the Exercise.</li>
+    <li><strong>Alternative &mdash; Android Studio source project (<code>DynamicCodeLoader/</code>).</strong> Open it, paste your dex's SHA-256 into the <code>expectedDexHash</code> constant in <code>MainActivity.kt</code>, hit <strong>Run &#9654;</strong>.</li>
+  </ul>
+  <p><strong>Your work is the attacker side, top-to-bottom:</strong> write <code>Calculation.kt</code> in IntelliJ &rarr; build the JAR &rarr; <code>d8</code> to <code>classes.dex</code> &rarr; hash it &rarr; serve it with <code>py -m http.server 8000</code> &rarr; <code>adb reverse</code> the tunnel &rarr; launch the host with your hash &rarr; see your code run inside the host's process.</p>
+</div>
+
+<h2>What you'll learn</h2>
+<ul>
+  <li>What "dynamic code loading" means at the JVM/DVM level — and why it's not the same as just running a downloaded executable.</li>
+  <li>How to take a normal Java/Kotlin module, package it as a JAR, and convert it to Android's DEX bytecode with the <code>d8</code> tool.</li>
+  <li>Why downloaded code inherits the host app's permissions — no second prompt, no second review.</li>
+  <li>What integrity controls Android offers (SHA-256 hash check, Android 14's writable-dex restriction) and what they do <em>not</em> protect against.</li>
+</ul>
+
+<h2>1. Background — what is dynamic code loading?</h2>
+
+<p>An ordinary Android app ships its code inside the APK as a single <code>classes.dex</code> (plus optional split DEX files for large apps). At install time, ART verifies and stores those DEX files; at runtime, the OS loads them into the app's process. Nothing else gets executed.</p>
+
+<p>Dynamic code loading breaks that model. The host app — at runtime, after install — fetches an extra <code>.dex</code> file from somewhere (a server, an asset, another file on the device), passes it to <code>DexClassLoader</code>, and uses Java reflection to invoke methods inside it. As far as the OS is concerned, those methods are running <em>inside the host app's process</em>, with the host app's UID, with the host app's permissions, and with no additional consent from the user.</p>
+
+<p>From slide 13: <strong>"the malicious code doesn't have to ask for permissions explicitly because it inherited the permissions of the host app."</strong> That sentence is the entire security story.</p>
+
+<h2>2. The build pipeline — jar → dex (slide 14)</h2>
+
+<p>The pipeline has four steps: write the class in a normal IntelliJ project, export it as a <code>.jar</code> through IntelliJ's Artifacts mechanism, run Android's <code>d8</code> tool to convert that <code>.jar</code> to a <code>.dex</code>, hash the result, and upload it to a server.</p>
+
+<h3>Step 0 — The Calculation example class</h3>
+
+<p>Slide 14 uses this minimal Kotlin class as the payload. It does nothing malicious — the payload's contents are not the point; the loading mechanism is. In a real attack the same class would do whatever the attacker pleased, with the host app's permissions:</p>
+
+<pre><code>package com.example.dynamic
+
+class Calculation {
+    fun div(a: Int, b: Int): Int {
+        return a / b
+    }
+}</code></pre>
+
+<p>Create a fresh IntelliJ <strong>Kotlin (JVM)</strong> project, drop this single file into <code>src/main/kotlin/com/example/dynamic/</code>, and let IntelliJ build it. Don't use an Android Studio project — you want a plain JVM module so the output is portable Java bytecode that <code>d8</code> can convert. The package, class, and method names <strong>must match</strong> what the host app reflects on (<code>com.example.dynamic.Calculation.div(Int,Int)</code>) — change any of them and the load fails with <code>NoSuchMethodException</code> or <code>ClassNotFoundException</code>.</p>
+
+<h3>Step 1 — Compile to a .jar (IntelliJ Artifacts)</h3>
+
+<p>IntelliJ's "Artifacts" feature is how you tell the IDE to package compiled classes into a deployable file. The menu path is identical on Windows, macOS, and Linux:</p>
+
+<ol>
+  <li>Open <strong>File &gt; Project Structure</strong> (Windows: <code>Ctrl+Alt+Shift+S</code> · macOS: <code>⌘ ;</code>).</li>
+  <li>In the left pane select <strong>Artifacts</strong>.</li>
+  <li>Click the <strong>+</strong> icon, then <strong>JAR &gt; From modules with dependencies…</strong></li>
+  <li>In the dialog: pick your module from the dropdown, leave <em>Main Class</em> empty (this is a library JAR — the host app calls into it, it has no <code>main</code>), choose an output directory for the JAR (default is <code>out/artifacts/&lt;module&gt;_jar/</code>).</li>
+  <li>Click <strong>OK</strong>, then <strong>Apply</strong>, then <strong>OK</strong> again to close Project Structure.</li>
+  <li>Build the JAR: <strong>Build &gt; Build Artifacts… &gt; &lt;your JAR&gt; &gt; Build</strong>. After it finishes, the output directory contains a <code>.jar</code> file — typically <code>untitled.jar</code> if you didn't rename the artifact, otherwise <code>&lt;artifact-name&gt;.jar</code>.</li>
+</ol>
+
+<p>Verify the JAR contains the expected class:</p>
+
+<pre><code>jar tf untitled.jar
+# Expected output includes:
+#   META-INF/MANIFEST.MF
+#   com/example/dynamic/Calculation.class</code></pre>
+
+<div class="warn">
+  <strong>Common mistake:</strong> if you click <em>JAR &gt; Empty</em> instead of <em>From modules with dependencies</em>, you get a JAR with a manifest but no class files. The build will succeed and the resulting JAR will be useless. Always pick <em>From modules with dependencies</em> for the lab.
+</div>
+
+<div class="warn">
+  <strong>Troubleshooting — "Abnormal build process termination" on Build.</strong> If the build dies with a long Java command line and an error (on macOS Apple Silicon: <code>rosetta error: Attachment of code signature supplement failed</code>; on Windows: a similar build-process-terminated message with no clear cause), the project SDK is too old. IntelliJ sometimes picks up an older JDK (8/11/15) that current OSes don't run cleanly.
+  <p><strong>Fix:</strong> <em>File &gt; Project Structure &gt; Project</em> &gt; change <strong>SDK</strong> to <strong>17</strong> or newer &gt; <strong>OK</strong> &gt; rebuild. That's it. No need to touch the Modules tab.</p>
+  <p>You don't need to download anything — IntelliJ ships its own JBR (matching your machine's architecture) at <code>&lt;IntelliJ install&gt;/jbr</code>. Add it via <em>Project Structure &gt; SDKs &gt; +</em> if it isn't already in the dropdown. Otherwise Temurin 21 from adoptium.net is a clean install (pick Windows x64 or macOS aarch64).</p>
+</div>
+
+<h3>Step 2 — Convert the .jar to .dex with <code>d8</code></h3>
+
+<p>The Android SDK ships <code>d8</code> as part of its build-tools. Locate the binary, then run it against your JAR with <code>--output .</code> to drop the resulting <code>classes.dex</code> in the current directory.</p>
+
+<table>
+<tr><th>OS</th><th>Path to <code>d8</code></th></tr>
+<tr><td>Windows (cmd / PowerShell)</td><td><code>%LOCALAPPDATA%\Android\Sdk\build-tools\&lt;ver&gt;\d8.bat</code></td></tr>
+<tr><td>macOS</td><td><code>~/Library/Android/sdk/build-tools/&lt;ver&gt;/d8</code></td></tr>
+<tr><td>Linux</td><td><code>~/Android/Sdk/build-tools/&lt;ver&gt;/d8</code></td></tr>
+</table>
+
+<p>The command shape from slide 14:</p>
+
+<pre><code>&lt;path-to-android-sdk&gt;/build-tools/&lt;version&gt;/d8 --output . your-jar-file.jar</code></pre>
+
+<p>Worked example from the slide (macOS):</p>
+
+<pre><code>/Users/erankatsav/Library/Android/sdk/build-tools/36.1.0/d8 --output . untitled.jar</code></pre>
+
+<p>Worked example for Windows:</p>
+
+<pre><code>%LOCALAPPDATA%\Android\Sdk\build-tools\36.1.0\d8.bat --output . untitled.jar</code></pre>
+
+<p>The output is a <code>classes.dex</code> in the current directory. (For modern Android Gradle Plugin 8+ projects, <code>d8</code> is invoked through Gradle as part of the build — calling it directly here is just for the demo, per the slide note.)</p>
+
+<h3>Step 3 (optional) — SHA-256 hash for integrity</h3>
+
+<p>Take a hash of the dex you just produced. The host app embeds this string and verifies the downloaded bytes match before loading.</p>
+
+<table>
+<tr><th>OS</th><th>Hash command</th></tr>
+<tr><td>Windows (cmd)</td><td><code>certutil -hashfile classes.dex SHA256</code></td></tr>
+<tr><td>Windows (PowerShell)</td><td><code>Get-FileHash classes.dex -Algorithm SHA256</code></td></tr>
+<tr><td>macOS / Linux</td><td><code>shasum -a 256 classes.dex</code></td></tr>
+</table>
+
+<p>Embed that hex string in the host app as a constant. On download, recompute the hash of the bytes you received and refuse to load if it doesn't match — this is the slide's recommended hardening.</p>
+
+<h3>Step 4 — Serve the dex from your PC</h3>
+
+<p>The host app fetches the dex over the network at runtime. For the lab, the simplest "server" is Python's built-in HTTP server running on your PC. The complete runtime flow has three moving parts that all need to be set up correctly — they're covered in section 4 below.</p>
+
+<h2>3. The loading code in the app &mdash; reference only, already written in the host (slide 15)</h2>
+
+<p class="lede"><em>This is the code that lives inside the provided host app. You are <strong>not</strong> writing it. Read it once so you understand what the host does when it receives your dex, then move on to Section 4 to wire up the lab.</em></p>
+
+<p>Inside the host app, the runtime flow is four bullets:</p>
+<ol>
+  <li><strong>Download</strong> the <code>.dex</code> file from an external source.</li>
+  <li><strong>Calculate and verify</strong> the SHA-256 hash to ensure file integrity.</li>
+  <li><strong>Load</strong> the file with <code>DexClassLoader</code>.</li>
+  <li><strong>Invoke</strong> a method in the dynamically-loaded class and display the result.</li>
+</ol>
+
+<h3>The download + verify wrapper</h3>
+
+<pre><code>val dexFileUrl  = "https://syntax.org.il/xtra/classes.dex"   // replace with your URL
+val dexFilePath = downloadDexFile(dexFileUrl, filename = "classes.dex", context = this@MainActivity)
+
+// Verify file integrity
+val isVerified = verifyDexFileIntegrity(dexFilePath, expectedDexHash)
+if (isVerified) {
+    // Load and execute the dex file only if verified
+    withContext(Dispatchers.Main) {
+        loadAndExecuteDex(dexFilePath)
+    }
+} else {
+    Log.e("DynamicLoading", "Dex file integrity check failed")
+}</code></pre>
+
+<p>Line-by-line:</p>
+<ul>
+  <li><code>dexFileUrl</code> — the server URL where the dex was uploaded in step 4 of section 2. Hardcoded as <code>https://syntax.org.il/xtra/classes.dex</code> in the lab; for your own test runs, replace with <code>http://&lt;your-laptop-ip&gt;:8000/classes.dex</code>.</li>
+  <li><code>downloadDexFile(...)</code> — a helper that opens an HTTP connection, streams the body to a file in the app's private storage, and returns the path. The <code>context</code> argument is needed so the helper can resolve <code>context.filesDir</code> as the destination.</li>
+  <li><code>verifyDexFileIntegrity(...)</code> — opens the downloaded file, runs <code>MessageDigest.getInstance("SHA-256")</code> over its bytes, and compares the result to <code>expectedDexHash</code> (the constant you embedded at build time). Returns <code>true</code> only on exact match.</li>
+  <li><code>withContext(Dispatchers.Main) { loadAndExecuteDex(...) }</code> — the loading + reflection happens on the main thread. The download/verify above runs on a background coroutine; the <code>withContext</code> switch is only for the UI-touching part.</li>
+  <li>The <code>else</code> branch — failed integrity check is the most important branch in the whole snippet. If it logs and bails out, an attacker who replaced the dex on the server gets nothing. If a real implementation were to log a warning and load anyway, the entire SHA-256 check is theatre.</li>
+</ul>
+
+<h3>The reflection block (inside <code>loadAndExecuteDex</code>)</h3>
+
+<pre><code>// Load the Calculation class dynamically
+val calculationClass    = dexClassLoader.loadClass("com.example.dynamic.Calculation")
+val calculationInstance = calculationClass.newInstance()
+
+// Use reflection to call the `div` method
+val divMethod = calculationClass.getMethod("div", Int::class.java, Int::class.java)
+val result    = divMethod.invoke(calculationInstance, 90, 3) as Int</code></pre>
+
+<p>This is the moment the downloaded code starts running:</p>
+<ul>
+  <li><code>dexClassLoader.loadClass("com.example.dynamic.Calculation")</code> — resolves the class by its <em>fully-qualified name</em>, exactly as it appears in your IntelliJ project. The string must match the <code>package</code> declaration of <code>Calculation.kt</code> (<code>com.example.dynamic</code>) and the class name (<code>Calculation</code>). Returns a <code>Class&lt;?&gt;</code> handle.</li>
+  <li><code>calculationClass.newInstance()</code> — calls the no-arg constructor on the freshly-loaded class and returns an instance. (Deprecated since JDK 9 in favour of <code>getDeclaredConstructor().newInstance()</code>, but still works on Android.)</li>
+  <li><code>calculationClass.getMethod("div", Int::class.java, Int::class.java)</code> — looks up the method by name and parameter types. The <code>Int::class.java</code> syntax is Kotlin's way of getting the JVM <code>java.lang.Integer.TYPE</code> token. Returns a <code>Method</code> handle.</li>
+  <li><code>divMethod.invoke(calculationInstance, 90, 3)</code> — calls <code>instance.div(90, 3)</code>. The return type is <code>Any?</code>, so we cast to <code>Int</code>. Result here is <code>30</code>.</li>
+</ul>
+
+<p>That's the entire trick. The <code>Calculation</code> class did not exist in the host APK at install time. The OS had no chance to inspect it, ART had no chance to verify it as part of the install. The first time anyone other than the attacker sees it is the moment <code>div(90, 3)</code> returns <code>30</code> — and at that moment the code is already running with the host app's UID, holding all of the host app's permissions.</p>
+
+<p class="lede"><em>Slide 15 in the deck shows <code>add(5, 3) → 8</code> as the example. The shipped lab APK reflects on <code>div</code> instead — same mechanism, different method. Whichever method you put in your dex, the host app's reflection string has to match it exactly.</em></p>
+
+<h3>Android 14: <code>setReadOnly()</code> on the dex file</h3>
+
+<div class="warn">
+  <strong>From the slide:</strong> <code>dexFile.setReadOnly()  //Solution for Android 14</code>
+  <p>Android 14 (API 34) refuses to load a <code>.dex</code> from a path the calling app can write. The OS reasoning: a writable dex is a TOCTOU window — the file you hashed at <code>t=0</code> can be different from the file ART maps at <code>t=1</code>. Refusing writable dex closes the window structurally.</p>
+  <p>The fix in the host app is to call <code>file.setReadOnly()</code> on the downloaded dex <em>after</em> the integrity check and <em>before</em> handing the path to <code>DexClassLoader</code>. The OS is then willing to load it because the file is no longer writable by the app's own UID. Without this call, the <code>loadClass</code> on Android 14+ throws a <code>SecurityException</code> and the demo silently fails.</p>
+</div>
+
+<h2>4. Running the lab on your PC + USB-connected A51</h2>
+
+<p>The phone has no SIM and no Wi-Fi, so we tunnel the PC's HTTP server back over the USB cable with <code>adb reverse</code>. Three things have to be alive at once: <strong>(1)</strong> a Python HTTP server on the PC in the folder holding <code>classes.dex</code>, <strong>(2)</strong> the USB tunnel via <code>adb reverse</code>, <strong>(3)</strong> the host APK built with the right URL and cleartext allowed.</p>
+
+<h3><code>adb reverse</code> in one paragraph</h3>
+
+<p><code>adb reverse tcp:8000 tcp:8000</code> tells the phone: "any connection you make to your own <code>127.0.0.1:8000</code>, send it down the USB cable to my <code>127.0.0.1:8000</code> instead." From the app's point of view the dex server lives on the phone; really it's the Python server on your PC. The tunnel survives app launches but dies on unplug, reboot, or <code>adb kill-server</code> — re-run the command if any of those happen. <code>adb reverse --list</code> shows what's active.</p>
+
+<h3>Configure the host APK (one-time)</h3>
+
+<p>Open <code>DynamicCodeLoader</code> in Android Studio. In <code>MainActivity.kt</code>, confirm <code>val dexFileUrl = "http://127.0.0.1:8000/classes.dex"</code>. If you built your own dex (instead of using the bundled one), paste its SHA-256 into <code>expectedDexHash</code> — <code>certutil -hashfile classes.dex SHA256</code> on Windows, <code>shasum -a 256 classes.dex</code> on macOS/Linux.</p>
+
+<p>Build &amp; install with Android Studio's <strong>Run ▶</strong> button (<kbd>Shift+F10</kbd>) once the A51 is selected as the target device. That handles compile, install, and launch in one click.</p>
+
+<h3>Setup recipe (run every session)</h3>
+
+<div class="warn">
+<pre><code>:: terminal 1 — leave open
+cd C:\path\to\folder-with-classes.dex
+py -m http.server 8000
+
+:: terminal 2 — one-liner, then close
+adb devices                          :: confirm phone is attached
+adb reverse tcp:8000 tcp:8000
+adb reverse --list                   :: expect "UsbFfs tcp:8000 tcp:8000"
+
+:: in Android Studio: Run ▶  (Shift+F10)</code></pre>
+</div>
+
+<p>The phone shows a Toast with the result; Android Studio's <strong>Logcat</strong> tab (filter by tag <code>DynamicLoading</code>) shows the success trace:</p>
+<pre><code>D/DynamicLoading: Dex file downloaded successfully
+D/DynamicLoading: Calculated file hash: 22c0705e...
+D/DynamicLoading: Result of dynamic method: 30</code></pre>
+
+<p>And the Python terminal mirrors the request:</p>
+<pre><code>::ffff:127.0.0.1 - - [...] "GET /classes.dex HTTP/1.1" 200 -</code></pre>
+
+<h3>Troubleshooting (most common first)</h3>
+
+<table>
+<tr><th>Symptom</th><th>Fix</th></tr>
+<tr><td><code>FileNotFoundException: …/files/classes.dex</code></td><td>Download silently failed. Look just above the crash for an <code>E/DynamicLoading</code> line — it names the real cause.</td></tr>
+<tr><td>Python server logs <code>"GET /classes.dex" 404</code></td><td>Server started in the wrong folder. Stop it, <code>cd</code> to the folder containing <code>classes.dex</code> (<code>dir classes.dex</code> to confirm), restart.</td></tr>
+<tr><td><code>"Dex file integrity check failed"</code></td><td>The served dex's SHA-256 doesn't match <code>expectedDexHash</code> in <code>MainActivity.kt</code>. Recompute and paste.</td></tr>
+<tr><td><code>NoSuchMethodException</code></td><td>The reflection block calls a method that doesn't exist in the dex (the lab dex uses <code>div</code>, not <code>add</code>).</td></tr>
+<tr><td><code>SecurityException</code> on <code>loadClass</code></td><td>Android 14+ only — uncomment <code>dexFile.setReadOnly()</code> in <code>downloadDexFile</code>. The lab A51 is older and won't hit this.</td></tr>
+</table>
+
+<div class="exercise">
+  <h3>Exercise — Build the payload, host it, hijack the host app</h3>
+
+  <p>You are going to play the attacker for the full pipeline: write the dynamic class in IntelliJ, package it as a JAR, convert to DEX, hash it, host it locally, plug the hash into the host project, install, and watch the host app execute <em>your</em> code. Then change the class once more without rebuilding the host APK — that's the whole point of dynamic loading.</p>
+
+  <div class="warn">
+    <strong>Plan B — if the Android Studio project won't open.</strong> Use the bundled <code>dynamic_code_loader.apk</code> instead. It's the same source pre-built with a small lab convenience: it reads the expected SHA-256 from a launch extra. You skip stages 4 and 5's Android Studio work entirely and pass <em>your</em> payload's hash on the command line at every launch.
+    <pre><code>:: install the prebuilt APK once
+adb install -r dynamic_code_loader.apk
+
+:: every time you have a fresh classes.dex on the server:
+adb shell am start -n com.example.dynamiccodeloader/.MainActivity --es hash &lt;your-64-char-hex&gt;</code></pre>
+    <p>The relevant line in the host source is just an override on top of the embedded constant — read it once so you understand what's happening, then forget about it:</p>
+    <pre><code>// in MainActivity.onCreate, before the coroutine launches
+val effectiveHash = intent.getStringExtra("hash") ?: expectedDexHash
+…
+val isVerified = verifyDexFileIntegrity(dexFilePath, effectiveHash)</code></pre>
+    <p>If the launch extra is supplied, it wins; otherwise the embedded constant is used. <strong>This is a lab shortcut, not a real-app pattern</strong> — production apps always embed the hash, never trust an external source for it. Do stages 1–3 and 6 normally; replace stages 4–5 (and bonus stage 7's "edit <code>expectedDexHash</code>") with the <code>--es hash</code> launch above.</p>
+  </div>
+
+  <h4>Stage 1 — Write the <code>Calculation</code> class in IntelliJ</h4>
+  <ol>
+    <li>Open IntelliJ. <strong>New Project → Kotlin</strong> (JVM, not Android). Pick JDK 17 or newer (see the troubleshooting box in section 2.1 if you hit "Abnormal build process termination").</li>
+    <li>Create the file <code>src/main/kotlin/com/example/dynamic/Calculation.kt</code>. Use this <em>skeleton</em>:
+      <pre><code>package com.example.dynamic
+
+class Calculation {
+    fun div(a: Int, b: Int): Int {
+        return /* your code here — see below */
+    }
+}</code></pre>
+      The <strong>fully-qualified name must be</strong> <code>com.example.dynamic.Calculation</code>, the method must be <code>div(Int, Int): Int</code>, and the package and JAR layout must be exactly that — those are the strings the host app reflects on. Change any and the load fails with <code>NoSuchMethodException</code> or <code>ClassNotFoundException</code>.
+    </li>
+    <li><strong>Make the body do something memorable that <em>isn't</em> <code>a / b</code></strong> — the host always invokes <code>div(90, 3)</code>, so the result you see on screen tells you whether <em>your</em> code ran. If you write <code>return a / b</code> you'll see <code>30</code> either way, which proves nothing. Pick something distinctive, e.g.:
+      <pre><code>return a + b           // returns 93 for div(90, 3)
+return a * b + 777     // returns 1047
+return 42              // returns 42 regardless of input — easiest to spot</code></pre>
+      Write it down so you can confirm the on-phone Toast matches what you wrote. The fact that calling a method named <code>div</code> can return whatever you like is itself the security point — the method name is a label, not a contract.
+    </li>
+    <li>Build the JAR: <strong>File → Project Structure → Artifacts → + → JAR → From modules with dependencies</strong>, leave <em>Main Class</em> empty, OK, Apply, OK. Then <strong>Build → Build Artifacts → &lt;your JAR&gt; → Build</strong>. Output lands at <code>out/artifacts/&lt;artifact-name&gt;_jar/&lt;artifact-name&gt;.jar</code> (typically <code>untitled.jar</code>).</li>
+  </ol>
+
+  <h4>Stage 2 — Convert the JAR to DEX with <code>d8</code></h4>
+  <p>From a terminal in the directory holding the JAR:</p>
+  <pre><code>:: Windows
+%LOCALAPPDATA%\Android\Sdk\build-tools\36.1.0\d8.bat --output . untitled.jar
+
+:: macOS / Linux
+~/Library/Android/sdk/build-tools/36.1.0/d8 --output . untitled.jar</code></pre>
+  <p>Result: <code>classes.dex</code> in the same directory.</p>
+
+  <h4>Stage 3 — Hash the DEX</h4>
+  <pre><code>certutil -hashfile classes.dex SHA256        :: Windows
+shasum -a 256 classes.dex                    :: macOS / Linux</code></pre>
+  <p>Copy the 64-character hex string. You'll paste it into the host project in the next stage.</p>
+
+  <h4>Stage 4 — Wire it into the host project</h4>
+  <ol>
+    <li>Unzip the <code>DynamicCodeLoader</code> project (the version shipped with this lab — cleartext is already enabled in the manifest).</li>
+    <li>Open the unzipped folder in <strong>Android Studio</strong> (<em>File → Open…</em> → pick the <code>DynamicCodeLoader</code> folder, not the inner <code>app</code> folder). Wait for Gradle sync to finish — the bottom status bar should say "Gradle sync finished" with no red badges. <em>If the project fails to sync (red errors, missing SDK, broken Gradle, JDK mismatch you can't resolve), stop here and switch to the <strong>Plan B</strong> callout at the top of this exercise — it skips Android Studio entirely.</em></li>
+    <li>Open <code>app/src/main/java/com/example/dynamiccodeloader/MainActivity.kt</code>. Replace the value of <code>expectedDexHash</code> with the hex string from stage 3.</li>
+    <li>Confirm the URL line reads <code>val dexFileUrl = "http://127.0.0.1:8000/classes.dex"</code>.</li>
+    <li>Copy <code>classes.dex</code> from stage 2 into a folder of your choice — call it <code>C:\dex-server\</code> for the rest of this exercise.</li>
+  </ol>
+
+  <h4>Stage 5 — Start the server + tunnel, then Run from Android Studio</h4>
+  <p>Two terminals first (the server and the tunnel have to be alive <em>before</em> the app launches, otherwise the download fails):</p>
+  <pre><code>:: terminal 1 — leave open
+cd C:\dex-server
+py -m http.server 8000
+
+:: terminal 2 — one-liner, then close it
+adb reverse tcp:8000 tcp:8000</code></pre>
+
+  <p>Now in Android Studio, with the <code>DynamicCodeLoader</code> project open and your A51 selected as the target device in the toolbar, just hit the green <strong>Run ▶</strong> button (<kbd>Shift+F10</kbd>). Android Studio compiles, installs, and launches the app for you — no <code>gradlew</code> or <code>adb install</code> needed. <em>If the build or install fails here for any reason you can't quickly resolve (Gradle errors, signing issues, target SDK mismatch), switch to <strong>Plan B</strong> at the top of this exercise.</em></p>
+
+  <p>Watch the result in two places:</p>
+  <ul>
+    <li><strong>The phone</strong> — Toast: <em>"Dynamic code loaded successfully! Result: &lt;your number&gt;"</em>. The number should match what your stage 1 body returns for <code>div(90, 3)</code> — e.g. <code>93</code> if you wrote <code>a + b</code>, <code>1047</code> if you wrote <code>a * b + 777</code>, <code>42</code> if you hardcoded it. <strong>If the number matches what you wrote, your dex ran.</strong> That's the success criterion.</li>
+    <li><strong>Android Studio's Logcat tab</strong> (View → Tool Windows → Logcat) — filter by tag <code>DynamicLoading</code> to see the three log lines from section 4.</li>
+  </ul>
+
+  <p>The Python terminal also mirrors the request: <code>"GET /classes.dex HTTP/1.1" 200</code>.</p>
+
+  <h4>Stage 6 (bonus) — Change the payload, watch the hash defence catch you</h4>
+  <p class="lede"><em>Stages 6 and 7 are optional. Stages 1–5 are the mandatory build-and-load pipeline; the bonus stages explore what the SHA-256 check buys you and what its absence costs.</em></p>
+  <p>Go back to IntelliJ. Change the <code>div</code> method to something different — say <code>return a * b + 1000</code>. Rebuild the JAR (Build → Build Artifacts → Rebuild), re-run <code>d8</code>, copy the new <code>classes.dex</code> into <code>C:\dex-server\</code> overwriting the old one. <strong>Don't touch <code>expectedDexHash</code></strong>. Re-launch the app.</p>
+
+  <p>Expected result: Toast <em>"Dex file integrity check failed"</em>, plus <code>E/DynamicLoading: Dex file integrity check failed</code> in Logcat. The new bytes' SHA-256 doesn't match the constant baked into the host APK, so <code>verifyDexFileIntegrity</code> returns <code>false</code> and <code>loadAndExecuteDex</code> never runs. <strong>This is the host app's defence working.</strong> The hash check binds the host APK to one specific dex; you can swap the bytes on the server, but the host won't run them.</p>
+
+  <h4>Stage 7 (bonus) — Update the hash and ship the new payload properly</h4>
+  <p>Now play the legitimate developer flow: you have a new payload, you want it to run, the SHA-256 check is still in place. Recompute the hash of the new <code>classes.dex</code> and paste it into the host:</p>
+
+  <pre><code>certutil -hashfile classes.dex SHA256        :: Windows
+shasum -a 256 classes.dex                    :: macOS / Linux</code></pre>
+
+  <p>In <code>MainActivity.kt</code>, replace the <code>expectedDexHash</code> constant with the new hex string. Hit <strong>Run ▶</strong> in Android Studio. New result, new behaviour, integrity check passes — because the host APK now embeds the hash of <em>this</em> payload.</p>
+
+  <p>Compare what you just did to stage 6's failure: the bytes on the server are identical in both stages. The only difference is whether the host APK was rebuilt with the matching hash. <strong>The hash check moves the cost of every payload update onto a host-APK rebuild and reinstall.</strong> That's the security trade-off it imposes — you can't ship new code silently.</p>
+
+  <details>
+    <summary>Hint — what to write down at the end</summary>
+    <ul>
+      <li>Stage 6 showed: the SHA-256 check binds the host APK to one specific dex. Swap the bytes alone, the load fails.</li>
+      <li>Stage 7 showed: a legitimate payload update requires recomputing the hash, updating the host, and re-shipping the APK. The check works as designed — at the cost of forcing every release through the same channel as a normal app update.</li>
+      <li>An attacker who left the check out (replaced <code>verifyDexFileIntegrity(...)</code> with <code>true</code>, or never wrote it) gets the opposite trade-off: every new file on the server runs at the next launch, with no APK update needed.</li>
+      <li>The Calculation class never existed in the host APK at install time. ART had no chance to verify it; Play Protect had no chance to scan it.</li>
+      <li>Everything ran with the host app's UID and permissions. If the host had INTERNET + READ_CONTACTS + RECORD_AUDIO, every new dex you served inherited all three.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Hint — what would catch this at scale</summary>
+    <ul>
+      <li><strong>HTTPS for the dex URL</strong>: stops casual MITM, doesn't stop a compromised origin server.</li>
+      <li><strong>SHA-256 check against an embedded hash</strong> (stage 6): stops anyone who can swap the bytes but can't ship a new APK. Forces the attacker to compromise the host app's release channel before they can ship a new dex.</li>
+      <li><strong><code>setReadOnly()</code> + Android 14's writable-dex refusal</strong>: closes a TOCTOU window between hashing and loading.</li>
+      <li><strong>Code signing of the dex inside the host app</strong> (slide 13's "best"): the host stores a public key, the dex carries a signature, the host verifies the signature against the embedded key. This is what Google Play does for the APK; it's what mature dynamic-loading apps do for their dex. Lets the developer push new payloads without re-shipping the APK <em>and</em> still bind execution to keys only the developer holds.</li>
+    </ul>
+  </details>
+</div>
+
+<h2>Reflection</h2>
+<ol>
+  <li>Slide 13 says <em>"INTERNET is held by virtually every app, so it isn't a useful backdoor indicator on its own."</em> What is the smallest set of <em>combined</em> signals that would still be a useful indicator?</li>
+  <li>Android 14 prevents loading a <code>.dex</code> that's writable. Why is "writable" the right property to check, and not "downloaded from the network" or "not in the APK"?</li>
+  <li>If you were reviewing an open-source app's code and you found a <code>DexClassLoader</code> call, what's the minimum bar of defensive code you'd require before merging it? Be specific.</li>
+</ol>
+
+<footer>
+  <p>Solutions and worked outputs: <a href="Dynamic_Code_Loading_Solution.html">Dynamic_Code_Loading_Solution.html</a></p>
+  <p class="meta">Course: Android Security · Day 4 · Dynamic code loading drill (Android Vulnerabilities slides 12–15). All commands taken verbatim from the slide deck.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

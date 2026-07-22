@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ADB Drill — Day 2 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+details { margin:10px 0; padding:8px 14px; background:var(--hint-bg); border-left:3px solid var(--hint-border); border-radius:3px; }
+details > summary { cursor:pointer; font-weight:600; color:var(--hint-border); }
+details[open] > summary { margin-bottom:8px; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+.meta { color:var(--muted); font-size:0.92em; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.exercise { background:var(--accent-soft); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--accent); }
+.exercise h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>ADB Drill — Driving the phone from your laptop</h1>
+<p class="lede">Two exercises drawn from the Android Debug Bridge slides. First, you learn to launch any app component using <code>adb shell am</code> with intent actions and data URIs. Then you watch RAM grow and shrink as a foreground service runs, gets killed, and is restarted.</p>
+
+<h2>What you'll learn</h2>
+<ul>
+  <li>How to start activities, services, and broadcast receivers from the command line — without ever touching the phone screen.</li>
+  <li>The difference between <strong>explicit</strong> intents (<code>-n &lt;package&gt;/.&lt;Activity&gt;</code>) and <strong>implicit</strong> intents (<code>-a &lt;ACTION&gt;</code> with optional <code>-d &lt;DATA&gt;</code>).</li>
+  <li>How extras (<code>--es</code>, <code>--ez</code>) carry typed key/value pairs into the intent the app receives.</li>
+  <li>How to observe an app's RAM footprint live with <code>dumpsys meminfo</code> and what changes when a foreground service is involved.</li>
+</ul>
+
+<h2>1. Background — what is the Activity Manager?</h2>
+<p>Inside Android, every running window is an <strong>Activity</strong>. Every always-on background task is a <strong>Service</strong>. Every "an event happened" delivery is a <strong>Broadcast</strong>. All three are managed by one system service — the <strong>Activity Manager</strong> (<code>am</code>). Through ADB you can tell <code>am</code> to start, stop, broadcast, and inspect everything it manages, with all the privileges that the <code>shell</code> user holds.</p>
+
+<p>The <code>am</code> commands you'll use today follow one of two shapes:</p>
+
+<h3>Explicit intent — name the component</h3>
+<pre><code>adb shell am start -n &lt;package&gt;/&lt;.Component&gt;
+adb shell am startservice -n &lt;package&gt;/&lt;.Service&gt;
+adb shell am start-foreground-service -n &lt;package&gt;/&lt;.Service&gt;</code></pre>
+<p>You name the exact app and exact class. Used when you know which app you want to talk to.</p>
+
+<h3>Implicit intent — describe what you want</h3>
+<pre><code>adb shell am start -a &lt;ACTION&gt; [-d &lt;DATA_URI&gt;] [--es key value] [--ez key true|false]</code></pre>
+<p>You describe the operation; Android picks an app whose manifest declares matching intent filters. Used when you want to trigger a feature regardless of which app handles it (camera, dialer, browser, sms composer).</p>
+
+<p>Common URI prefixes for <code>-d</code>: <code>tel:</code>, <code>http:</code>, <code>https:</code>, <code>geo:</code>, <code>mailto:</code>, <code>sms:</code>, <code>smsto:</code>.</p>
+
+<div class="warn">
+  <strong>Setup before you start.</strong> Install the AdbTraining app:
+  <pre><code>adb install -r -g app-debug.apk</code></pre>
+  The <code>-g</code> grants every runtime permission upfront so you don't have to deal with permission dialogs during the drill (notably the POST_NOTIFICATIONS one needed by the foreground service on Android 13+).
+</div>
+
+<div class="exercise">
+  <h3>Instructor demo before Exercise 1 — <code>am start</code> basics (slide 12)</h3>
+  <p class="meta">Walked through live on the projector; recorded here in case you missed it on the day.</p>
+  <p>The simplest case for each of the two intent shapes (explicit and implicit):</p>
+  <pre><code># Explicit — name the component
+adb shell am start -n il.co.syntax.adbtraining/.MainActivity
+
+# Implicit — describe what to do; the OS picks the app
+adb shell am start -a android.intent.action.DIAL -d tel:8768678
+adb shell am start -a android.intent.action.VIEW -d http://cnn.com</code></pre>
+  <p>Try replacing <code>DIAL</code> with <code>CALL</code> in the second line. <code>DIAL</code> opens the dialer pre-filled and waits for a tap; <code>CALL</code> dials directly — but only succeeds if the calling UID holds the <code>CALL_PHONE</code> permission. Shell does (see Day 1's Service Call drill), so on the lab phone <code>CALL</code> would actually attempt to dial. The <code>VIEW</code> example with <code>http://cnn.com</code> opens the default browser at CNN.</p>
+</div>
+
+<div class="exercise">
+  <h3>Exercise 1 — Open apps with <code>am start</code> (slides 14–15)</h3>
+  <p>Goal: drive the phone entirely through ADB, never touching the screen. Your reference is the Android <a href="https://developer.android.com/guide/components/intents-common" target="_blank"><strong>Common Intents</strong></a> page — it lists, by use case (Alarm clock, Camera, Contacts, Email, Maps, SMS, Web, …), every standard action the platform recognises and the extras each one takes.</p>
+
+  <ol>
+    <li>Open the AdbTraining app's <code>SecondActivity</code> (the second screen) using an explicit intent.</li>
+    <li>Open the camera in <strong>still image</strong> mode using an implicit intent. Then close it and try <strong>video</strong> mode.</li>
+    <li>Open the map app to coordinates <code>32.0833, 34.8167</code> (use the right URI scheme).</li>
+    <li>Open the SMS composer to a specific number with the message body pre-filled to <code>Hello World!</code> (one space between the words). Use the right action and the right extra key.</li>
+    <li>Now do the same SMS, but <em>without</em> using <code>--es</code>. Type the body into the open compose window directly using <code>adb shell input text</code>.</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 — Activity component naming</summary>
+    <p>The package and class go in the form <code>&lt;package&gt;/.&lt;ClassName&gt;</code>. The leading dot means "relative to the package". For AdbTraining the package is <code>il.co.syntax.adbtraining</code>.</p>
+  </details>
+
+  <details>
+    <summary>Hint 2 — Where to find the action you need on the Common Intents page</summary>
+    <p>The <a href="https://developer.android.com/guide/components/intents-common" target="_blank">Common Intents page</a> is organised by use case. Scroll the left-side TOC to find the category — "Camera" for tasks 2, "Maps" for task 3, "Text messaging" for task 4 — then read the section. Each section shows code samples that look like this:</p>
+    <pre><code>val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)</code></pre>
+    <p>That's a Kotlin constant <em>name</em>, not the action string. You can't pass <code>ACTION_IMAGE_CAPTURE</code> to <code>am start -a</code>. <strong>You need the actual string the constant resolves to</strong> — see Hint 3.</p>
+  </details>
+
+  <details>
+    <summary>Hint 3 — Find the actual constant value, not the nice symbol name</summary>
+    <p>This is the single most common student mistake on this exercise. When the docs say:</p>
+    <pre><code>MediaStore.ACTION_IMAGE_CAPTURE</code></pre>
+    <p>that is a <em>variable name</em>. It's a label Java/Kotlin code uses. The shell knows nothing about it. The shell needs the <strong>string value</strong> the constant holds. To find it:</p>
+    <ol>
+      <li>Click the symbol name in the Common Intents page — it links you to the reference page for that class.</li>
+      <li>On the reference page, find the constant in the alphabetical list of fields. You'll see a block like:
+        <pre><code>public static final String ACTION_IMAGE_CAPTURE
+
+Constant Value: "android.media.action.IMAGE_CAPTURE"</code></pre>
+      </li>
+      <li><strong>Use the line that starts with "Constant Value"</strong> — everything inside the quotes — as the argument to <code>-a</code>.</li>
+    </ol>
+    <pre><code>:: correct — uses the string value
+adb shell am start -a android.media.action.IMAGE_CAPTURE
+
+:: wrong — uses the symbol name; nothing matches
+adb shell am start -a ACTION_IMAGE_CAPTURE</code></pre>
+    <p>The same rule applies to <strong>extras</strong>. If the docs say:</p>
+    <pre><code>intent.putExtra(Intent.EXTRA_TEXT, "Hello World!")</code></pre>
+    <p>that's a Kotlin variable named <code>EXTRA_TEXT</code> on the <code>Intent</code> class. The actual key the receiving app reads is whatever string that constant holds. Click through to the reference page:</p>
+    <pre><code>public static final String EXTRA_TEXT
+
+Constant Value: "android.intent.extra.TEXT"</code></pre>
+    <p>So on the command line:</p>
+    <pre><code>:: correct — uses the actual key string
+adb shell am start -a android.intent.action.SENDTO -d "sms:0501234567" --es sms_body "Hello\ World!"
+
+:: wrong — uses the symbol name; the receiver looks for "sms_body" and finds nothing
+adb shell am start -a SENDTO --es EXTRA_TEXT "Hello\ World!"</code></pre>
+    <p>(SMS composer is a special case — it doesn't use <code>EXTRA_TEXT</code>; the actual key for its body extra is <code>"sms_body"</code>, which you'd discover by reading the Telephony reference. The point stands: <em>look at the value, not the variable name</em>.)</p>
+  </details>
+
+  <details>
+    <summary>Hint 4 — Spaces in shell strings</summary>
+    <p>The shell tokenises arguments on whitespace. To put a literal space inside an argument that arrives as one extra value, escape the space with a backslash: <code>"Hello\ World!"</code>. Same trick applies to <code>adb shell input text</code>.</p>
+  </details>
+
+  <details>
+    <summary>Hint 5 — Map URIs</summary>
+    <p>Maps use the <code>geo:</code> URI scheme. The format is <code>geo:&lt;lat&gt;,&lt;lng&gt;</code>. No quotes needed if there are no spaces. The Common Intents "Maps" section spells out variations like search-query URIs (<code>geo:0,0?q=...</code>) you can try in the bonus.</p>
+  </details>
+
+  <h3 style="margin-top:18px;">Bonus mission — pick two more actions yourself (slide 14)</h3>
+  <p>The slide ends with: <em>"Pick two actions from the page, look at the extras, and try them for yourself."</em> That's the real exercise — using the Common Intents page to discover and run new ones on your own. For each action you pick, write down:</p>
+  <ol>
+    <li>The category (e.g. Alarm clock)</li>
+    <li>The constant value of the action — the actual <code>android.&lt;…&gt;.action.&lt;…&gt;</code> string you'll pass to <code>-a</code></li>
+    <li>The constant value of each extra you need — the actual key string you'll pass to <code>--es</code> / <code>--ei</code> / <code>--ez</code></li>
+    <li>The data URI, if any, you'll pass to <code>-d</code></li>
+  </ol>
+  <p>Three good candidates if you're stuck: <strong>WEB_SEARCH</strong> (one string extra, easy), <strong>SET_ALARM</strong> (two int extras for hour/minute + an optional message — practises <code>--ei</code>), and <strong>SET_TIMER</strong> (one int extra for length in seconds). All three are documented on the Common Intents page.</p>
+
+  <p class="muted"><em>Don't open the solution yet — read the Common Intents entries for each action, derive the constant value strings yourself, build the command, run it on the phone.</em></p>
+</div>
+
+<div class="exercise">
+  <h3>Instructor demo — broadcasting to your own receiver (slide 17)</h3>
+  <p class="meta">Walked through live on the projector; recorded here in case you missed it on the day.</p>
+  <p>The AdbTraining app's MainActivity registers a <code>BroadcastReceiver</code> for the custom action <code>il.co.sytax.MESSAGE_RECEIVER</code>. Send the broadcast and a Toast pops up with the string from the <code>message</code> extra:</p>
+  <pre><code>adb shell am broadcast -a il.co.sytax.MESSAGE_RECEIVER --es message hello</code></pre>
+  <p>Now run through the lifecycle, paying attention to when the Toast appears and when it doesn't:</p>
+  <ol>
+    <li><strong>Foreground</strong>: launch the activity, broadcast — Toast appears.</li>
+    <li><strong>Background</strong>: press Home (or Back on Android 12-), broadcast again — Toast still appears, because the activity is still alive in the background.</li>
+    <li><strong>Killed</strong>: swipe up from Recents (Android 13+) or <code>adb shell am force-stop il.co.syntax.adbtraining</code>, broadcast again — <em>nothing happens</em>.</li>
+  </ol>
+  <p><strong>Why step 3 fails:</strong> the receiver is registered <em>dynamically</em> (in code, in <code>onCreate</code>) — when the activity dies, the receiver dies with it. Static manifest-registered receivers <em>can</em> wake an app from a fully killed state, but since Android 8 (API 26) only a small whitelist of system broadcasts (BOOT_COMPLETED, BLUETOOTH state, etc.) qualify. Custom actions don't. This is the difference between dynamic and static broadcast registration that comes back in the Day 3 Hidden Recognition capstone.</p>
+  <div class="warn">
+    Note: the action string in the slide has a typo (<code>il.co.sytax</code>, not <code>il.co.syntax</code>) — that's the actual string the AdbTraining app registers, so use it verbatim. Don't "correct" the typo or the broadcast won't match.
+  </div>
+</div>
+
+<div class="exercise">
+  <h3>Instructor demo before Exercise 2 — starting a service (slide 19)</h3>
+  <p class="meta">Walked through live on the projector; recorded here in case you missed it on the day.</p>
+  <p>The MusicPlayerService streams an audio URL from the <code>link</code> extra and plays it through the OS Media Player:</p>
+  <pre><code>adb shell am startservice -n il.co.syntax.adbtraining/.MusicPlayerService \
+  --es link https://syntax.org.il/xtra/bob.m4a</code></pre>
+  <p>Bob plays. The service then promotes itself to <em>foreground</em> by displaying a notification — required on Android 8+ to keep running when the user navigates away. On Android 13+, the user must also have granted <code>POST_NOTIFICATIONS</code> for that notification to appear; if the app was installed without <code>-g</code>, grant it explicitly:</p>
+  <pre><code>adb shell pm grant il.co.syntax.adbtraining android.permission.POST_NOTIFICATIONS</code></pre>
+  <p>Force-stop the app and try again with <code>--ez notif false</code> — the service refuses to show its notification:</p>
+  <pre><code>adb shell am force-stop il.co.syntax.adbtraining
+adb shell am startservice -n il.co.syntax.adbtraining/.MusicPlayerService \
+  --es link https://syntax.org.il/xtra/bob.m4a --ez notif false</code></pre>
+  <p>Within 5–10 seconds the OS terminates the service with <code>ForegroundServiceDidNotStartInTimeException</code> in logcat. The contract is "promote to foreground within 5 seconds, or you die".</p>
+  <p><strong>Background-vs-foreground start:</strong> if the app is already idle (no live activity), <code>am startservice</code> fails with <code>BackgroundServiceStartNotAllowedException</code> — Android 8+ background restrictions. Switch to <code>am start-foreground-service</code> instead. That's exactly the rule Exercise 2 below depends on.</p>
+</div>
+
+<div class="exercise">
+  <h3>Exercise 2 — RAM usage with a foreground service (slides 21–22)</h3>
+  <p>Goal: watch the AdbTraining app's <code>MusicPlayerService</code> consume memory across its lifecycle. The service streams a music file from a URL and shows a notification while playing.</p>
+
+  <ol>
+    <li>Start the music player as a <strong>foreground service</strong> with the URL <code>https://syntax.org.il/xtra/bob.m4a</code> in an extra named <code>link</code>. (You must use <code>start-foreground-service</code> here, not <code>startservice</code> — the slide explains why.)</li>
+    <li>Read the service's RAM footprint with <code>dumpsys meminfo</code>, filtering for the package name.</li>
+    <li>Force-stop the app and check meminfo again. What changed?</li>
+    <li>Start <em>only</em> the <code>MainActivity</code> (no music) and check meminfo a third time.</li>
+    <li>Now start the activity AND the service. Compare. Then close the activity by swiping up — does the service survive?</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 — start-foreground-service vs startservice</summary>
+    <p>An app with no foreground component can't start a regular service from the background — Android 8+ rule. <code>start-foreground-service</code> bypasses that rule by promising the service will become foreground (i.e. show a persistent notification) within ~5 seconds. If you forget the <code>-foreground-</code> middle segment, you'll get a <code>BackgroundServiceStartNotAllowed</code> exception in logcat.</p>
+  </details>
+
+  <details>
+    <summary>Hint 2 — Filtering meminfo for one package</summary>
+    <p><code>dumpsys meminfo</code> dumps every process; pipe through <code>grep</code>:</p>
+    <pre><code>adb shell dumpsys meminfo | grep syntax</code></pre>
+    <p>Or pass the package name to <code>dumpsys meminfo</code> directly for a detailed breakdown of one process:</p>
+    <pre><code>adb shell dumpsys meminfo il.co.syntax.adbtraining</code></pre>
+  </details>
+
+  <details>
+    <summary>Hint 3 — Listing processes by package</summary>
+    <pre><code>adb shell ps -A | grep syntax</code></pre>
+    <p>The number in the second column is the PID — you can use it instead of the package name in <code>dumpsys meminfo &lt;PID&gt;</code>.</p>
+  </details>
+
+  <details>
+    <summary>Hint 4 — Force-stop syntax</summary>
+    <pre><code>adb shell am force-stop &lt;package&gt;</code></pre>
+    <p>This kills every process and component the app owns, including its foreground service.</p>
+  </details>
+
+  <details>
+    <summary>Hint 5 — Why the activity-only run uses less memory</summary>
+    <p>An activity in the foreground occupies its own process; a service that the same app owns runs <em>in the same process</em> (unless explicitly declared otherwise). When you start the service, the process pulls in extra libraries (the media player, the notification machinery, the network stack). Activity-only is leaner because none of that is loaded.</p>
+  </details>
+</div>
+
+<div class="exercise">
+  <h3>Exercise 3 — Spotting an "abnormal" app from its resource fingerprint (slides 24–28)</h3>
+  <p>Two apps come paired: <code>normal_app.apk</code> and <code>abnormal_app.apk</code>. They look identical from the outside — same UI, same package name pattern. Underneath, the abnormal one runs a continuous high-load CPU loop. From a defender's standpoint, the question is: <em>can I tell them apart from <code>adb</code> alone, without seeing the source?</em></p>
+
+  <ol>
+    <li>Install both: <code>adb install -g abnormal_app.apk</code> and <code>adb install -g normal_app.apk</code> (the <code>-g</code> just skips runtime prompts).</li>
+    <li>Start the abnormal app's main activity. Take a <strong>baseline</strong> <code>dumpsys meminfo</code> reading <em>before</em> tapping the button.</li>
+    <li>Tap "start heavy CPU operations" on screen, wait ~20 seconds for allocations to accumulate.</li>
+    <li>Read <code>dumpsys meminfo</code> again. Compare four rows in particular: <strong>Java Heap</strong>, <strong>Dalvik Heap</strong>, <strong>Native Heap</strong>, and <strong>TOTAL PSS</strong>.</li>
+    <li>Read its CPU usage with <code>top -n 1 -b</code>. Filter for the package.</li>
+    <li>Compare every metric against the same readings for <code>com.example.normalapp</code>.</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 — which tools you'll need</summary>
+    <p>Three commands cover all the steps: <code>am start</code> (you've used this since Exercise 1), <code>dumpsys meminfo &lt;pkg&gt;</code> (you've used this in Exercise 2), and <code>top -n 1 -b</code> (new — single-batch dump of all processes' CPU/MEM). Pipe <code>top</code> through <code>head</code> or <code>grep</code> so you don't drown in 600 rows.</p>
+    <p>Slide threshold to call something "abnormal": <strong>~100 MB</strong> heap growth or <strong>20–30%+</strong> CPU sustained. On the lab phone the abnormal app comfortably exceeds both.</p>
+  </details>
+
+  <details>
+    <summary>Hint 2 — which heap row should grow, and which should not</summary>
+    <p>This app's Heavy-CPU loop is written in Kotlin and allocates lots of Java/Kotlin objects in a tight loop. Those objects land in the <strong>Dalvik Heap</strong> / <strong>Java Heap</strong> rows — those are where you'll see the dramatic growth (typically from ~3–11 MB to well over 100 MB in 20 seconds). The <strong>Native Heap</strong> row, by contrast, barely moves — it would only grow if the app's heavy work went through JNI / C++ via <code>malloc</code>, which this one doesn't.</p>
+    <p>So the "what to look for" rule is per-language: <strong>Kotlin/Java allocators → Dalvik &amp; Java Heap rows</strong>; <strong>C/C++ via JNI → Native Heap row</strong>. The <code>TOTAL PSS</code> row sums both — it's the one-number summary, but watching the individual rows tells you <em>where</em> the work is happening.</p>
+  </details>
+
+  <details>
+    <summary>Hint 3 — Why <code>top</code> can show >100% CPU</summary>
+    <p>On a multi-core phone <code>top</code> sums per-core utilisation, so a process pinning all 8 cores would read up to 800%. The A51 has 8 cores. On this app the heavy loop typically reads several hundred per cent — pegging multiple cores. The slide quotes "20–30%" as a rough threshold; we're an order of magnitude above that.</p>
+  </details>
+
+  <details>
+    <summary>Hint 4 — What this teaches about malware detection</summary>
+    <p>This is the simplest defender's primitive: <em>compare what the app says it does to what its resource use suggests it actually does</em>. A "lightweight questionnaire" that pegs cores and balloons its Dalvik heap to hundreds of MB isn't lightweight. The Day 3 Hidden Recognition capstone is the same idea on a richer canvas — composing many legitimate APIs into a non-legitimate behaviour, visible in resource graphs.</p>
+  </details>
+</div>
+
+<div class="exercise">
+  <h3>Exercise 4 — Package manager (slide 31)</h3>
+  <p>The <code>pm</code> tool inside <code>adb shell</code> is how you list, locate, install, uninstall, and grant/revoke for any package on the device. Two short sub-exercises:</p>
+
+  <h4>4A — Find, uninstall, and reinstall the AdbTraining app</h4>
+  <p>Confirm the AdbTraining package is installed. Find where its APK lives on disk. Force-stop the app, uninstall it, then reinstall from <code>app-debug.apk</code> in the course folder. Verify the package is back. The whole sequence is five short adb commands.</p>
+
+  <h4>4B — Pick any app on the phone (e.g. WhatsApp), pull its APK, dump its manifest</h4>
+  <p>Find WhatsApp's APK path on the device, copy <code>base.apk</code> back to your laptop, then dump its <code>AndroidManifest.xml</code> in human-readable form. The first command produces several paths (one per split APK) — only <code>base.apk</code> matters for manifest analysis.</p>
+
+  <details>
+    <summary>Hint 1 — useful pm flags from the slide</summary>
+    <ul>
+      <li><code>pm list packages -f</code> → also print the on-device APK path next to each package name (saves you a follow-up <code>pm path</code>).</li>
+      <li><code>pm list packages -3</code> → user-installed only (filters out system apps).</li>
+      <li><code>pm uninstall -k &lt;pkg&gt;</code> → keep app data after uninstall (useful for "reinstall preserves my settings" testing).</li>
+      <li><code>pm grant &lt;pkg&gt; &lt;PERMISSION&gt;</code> / <code>pm revoke …</code> → only works for permissions the app declared in its manifest.</li>
+      <li><code>pm reset-permissions</code> → no package argument; clears every app's runtime permission grants.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Hint 2 — Why this matters for security analysis</summary>
+    <p>Every step of the "is this app malicious?" workflow goes through these commands: list installed packages → find the suspect → pull its APK → decompile (Day 4 with JADX) and read its manifest. <code>pm path</code> is the bridge between "I see a suspicious package name in <code>pm list packages</code>" and "I have an APK file I can analyse offline".</p>
+  </details>
+</div>
+
+<div class="exercise">
+  <h3>Exercise 5 — Screen capture: still and video (slide 34)</h3>
+  <p>Two on-device commands cover this; reference syntax from the slide:</p>
+
+  <ul>
+    <li><code>screencap &lt;path&gt;</code> — single PNG. Use <code>.png</code> extension; <code>.jpg</code> doesn't work (the slide warns about this explicitly).</li>
+    <li><code>screenrecord [options] &lt;path&gt;</code> — MP4 video. Default max length 3 minutes; <code>--time-limit &lt;sec&gt;</code> to cap shorter; <code>--size WxH</code> to downscale; <code>--verbose</code> to print stats while recording. Press <code>Ctrl+C</code> in the adb terminal to stop early.</li>
+  </ul>
+
+  <p><strong>Your task:</strong> take one screenshot and one short (~5 s) screen recording, then copy both files from the phone to your workstation. Use <code>.png</code> and <code>.mp4</code> extensions respectively. Save to <code>/sdcard/</code> on the device. Pull to your laptop with <code>adb pull</code>.</p>
+
+  <details>
+    <summary>Hint — caveats on Android 13</summary>
+    <ul>
+      <li>Internal audio recording requires Android 10+ via <code>--audio-source internal</code>; older versions silent-only. The lab A51 (Android 13) supports it.</li>
+      <li>Screen rotation while <code>screenrecord</code> is running is blocked.</li>
+      <li>The output path must be on writable storage — <code>/sdcard/...</code> is the safe choice.</li>
+    </ul>
+  </details>
+</div>
+
+<div class="exercise">
+  <h3>Exercise 6 — Capstone: take a photo from <code>adb</code> alone (slide 38)</h3>
+  <p>Combine the techniques from the earlier exercises. Drive the phone with no screen taps:</p>
+
+  <ol>
+    <li><strong>Open the camera</strong> in still-image mode using an implicit intent. (Same shape as Exercise 1's STILL_IMAGE_CAMERA task — that one launched the app; here you'll keep going.)</li>
+    <li><strong>Press the shutter button</strong> by sending a key event. The slide hints: <em>keyevent 27, or KEYCODE_CAMERA</em>.</li>
+    <li><strong>Find the file</strong> you just took. Photos land in <code>/sdcard/DCIM/Camera/</code>; the new one is the most-recently-modified entry there. Use <code>ls</code> with a sort flag and head/tail.</li>
+    <li><strong>Pull it</strong> with the standard adb file copy.</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 — What if the shutter doesn't fire on the first key press?</summary>
+    <p>Both forms work: <code>adb shell input keyevent KEYCODE_CAMERA</code> and <code>adb shell input keyevent 27</code>. The Samsung camera app may need a second keycode press if the first is interpreted as autofocus rather than shutter — try pressing twice with a short delay if the first photo doesn't materialise.</p>
+  </details>
+
+  <details>
+    <summary>Hint 2 — How do I find the file I just took?</summary>
+    <p>The slide uses <code>tail -1</code>, which returns the <em>last line of an alphabetically-sorted</em> listing. That works because Samsung's camera names files <code>YYYYMMDD_HHMMSS.jpg</code>, so alphabetical order = chronological order. <code>ls -t | head -1</code> is more explicit (sort by mtime, take newest). Both reach the same file when the camera app is the only writer.</p>
+  </details>
+
+  <details>
+    <summary>Hint 3 — Why this is the capstone</summary>
+    <p>Every primitive in this drill comes back here: implicit intent (Exercise 1), key events (Exercise 1, sub-task 5), file system access via <code>/sdcard</code> (Exercise 5), <code>adb pull</code> (Exercise 5). If you can complete this without consulting the cheat sheet, you've internalised the four-day mental model of "phone is a remote service, <code>adb</code> is the client".</p>
+  </details>
+</div>
+
+<h2>Reflection</h2>
+<ol>
+  <li>Why does an implicit intent (<code>am start -a ...</code>) have to be told a data URI when the action implies a target? What would happen if Android only used the action string?</li>
+  <li><code>--es</code> takes a string, <code>--ez</code> takes a boolean. There's also <code>--ei</code> (int) and <code>--el</code> (long). Why does the framework demand typed extras instead of just letting you pass strings everywhere?</li>
+  <li>You started a service that played music from the internet. The same command lets <em>any</em> shell user point that service at <em>any</em> URL. From a security perspective: is this an issue with the <code>am start-foreground-service</code> command, with the service's design, or with both? Defend your answer.</li>
+</ol>
+
+<footer>
+  <p>Solutions and worked outputs: <a href="ADB_Solution.html">ADB_Solution.html</a></p>
+  <p class="meta">Course: Android Security · Day 2 · ADB drill (Android Debug Bridge slides 14–15, 21–22). All commands are taken verbatim from the slide deck.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

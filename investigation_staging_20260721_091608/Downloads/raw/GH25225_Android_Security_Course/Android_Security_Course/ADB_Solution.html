@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ADB Drill — Solution — Day 2</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+.meta { color:var(--muted); font-size:0.92em; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.solution { background:var(--solution-bg); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--solution-border); }
+.solution h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>ADB Drill — Solutions</h1>
+<p class="lede">All commands below are taken from slides 15 and 22 of <em>Android Debug Bridge.pptx</em>.</p>
+
+<h2>Solution to Exercise 1</h2>
+
+<div class="solution">
+<pre><code>adb shell am start -n il.co.syntax.adbtraining/.SecondActivity
+
+adb shell am start -a android.media.action.STILL_IMAGE_CAMERA
+adb shell am start -a android.media.action.VIDEO_CAPTURE
+
+adb shell am start -a android.intent.action.VIEW -d geo:32.0833,34.8167
+
+adb shell am start -a android.intent.action.SENDTO -d sms:658765 --es sms_body "Hello\ World!"
+
+# or, without --es, after the SMS window opens:
+adb shell input text "Hello\ World!"</code></pre>
+</div>
+
+<h3>Argument breakdown</h3>
+<table>
+<tr><th>Command</th><th>What's happening</th></tr>
+<tr><td><code>am start -n il.co.syntax.adbtraining/.SecondActivity</code></td><td>Explicit intent. <code>il.co.syntax.adbtraining</code> is the manifest <code>package</code>; <code>.SecondActivity</code> is the relative class name (resolves to <code>il.co.syntax.adbtraining.SecondActivity</code>).</td></tr>
+<tr><td><code>android.media.action.STILL_IMAGE_CAMERA</code></td><td>System action that any installed camera app can declare it handles. The OS shows the chooser if more than one matches.</td></tr>
+<tr><td><code>android.media.action.VIDEO_CAPTURE</code></td><td>Same family — but specifically asks the camera app to start in video mode.</td></tr>
+<tr><td><code>android.intent.action.VIEW -d geo:32.0833,34.8167</code></td><td><code>VIEW</code> is the most generic display intent; the URI scheme decides what type of "view". <code>geo:</code> resolves to the map app.</td></tr>
+<tr><td><code>android.intent.action.SENDTO -d sms:658765</code></td><td><code>SENDTO</code> means "open a composer for this destination, don't send yet". The <code>sms:</code> scheme tells Android the target is an SMS; <code>658765</code> after the colon is the destination number.</td></tr>
+<tr><td><code>--es sms_body "Hello\ World!"</code></td><td>String extra named <code>sms_body</code> — that's the documented extra key the SMS composer reads to pre-fill the message body.</td></tr>
+<tr><td><code>adb shell input text "Hello\ World!"</code></td><td>Sends literal keystrokes to whichever window has focus. Useful when the app you're driving doesn't expose a documented extra for the field you want to fill.</td></tr>
+</table>
+
+<h2>Solution to the Bonus mission — three worked examples</h2>
+
+<p>The drill asks you to pick <em>two</em> actions from the docs page and try them. Here are <em>three</em> worked examples so you can see how the documentation maps to the command. All three were captured on the lab Galaxy A51 and visibly produced the expected behaviour on the phone screen.</p>
+
+<h3>Example 1 — Google web search</h3>
+
+<div class="solution">
+<pre><code>adb shell am start -a android.intent.action.WEB_SEARCH --es query "android\ security"</code></pre>
+<p>Captured: <code>Starting: Intent { act=android.intent.action.WEB_SEARCH (has extras) }</code></p>
+<p>Phone shows: the default browser opens with Google searching for "android security".</p>
+</div>
+
+<h4>How the docs entry mapped to the command</h4>
+<table>
+<tr><th>Docs entry</th><th>What I read</th><th>Where it went in the command</th></tr>
+<tr><td><code>Constant Value: "android.intent.action.WEB_SEARCH"</code></td><td>The action's wire string</td><td>After <code>-a</code></td></tr>
+<tr><td>Required input: <code>SearchManager.QUERY ("query")</code></td><td>One string extra named <code>query</code></td><td><code>--es query "..."</code></td></tr>
+<tr><td>(no <code>Intent.getData()</code> reference)</td><td>No data URI needed</td><td>No <code>-d</code> in the command</td></tr>
+</table>
+
+<h3>Example 2 — Pre-fill the alarm clock with a new alarm</h3>
+
+<div class="solution">
+<pre><code>adb shell am start -a android.intent.action.SET_ALARM \
+  --ei android.intent.extra.alarm.HOUR 7 \
+  --ei android.intent.extra.alarm.MINUTES 30 \
+  --es android.intent.extra.alarm.MESSAGE "wake\ up"</code></pre>
+<p>Captured: <code>Starting: Intent { act=android.intent.action.SET_ALARM (has extras) }</code></p>
+<p>Phone shows: the Clock app opens directly on the "Add alarm" screen, with hour pre-set to 7, minutes to 30, and the label field filled with "wake up". You can either tap Save to commit or cancel out.</p>
+</div>
+
+<h4>How the docs entry mapped to the command</h4>
+<p>This one's documented on a <em>different</em> class — <code>android.provider.AlarmClock</code> — not on <code>Intent</code>. The reference for it lists:</p>
+<pre><code>public static final String ACTION_SET_ALARM
+Constant Value: "android.intent.action.SET_ALARM"
+
+Optional Extras (selected):
+  EXTRA_HOUR     "android.intent.extra.alarm.HOUR"     int
+  EXTRA_MINUTES  "android.intent.extra.alarm.MINUTES"  int
+  EXTRA_MESSAGE  "android.intent.extra.alarm.MESSAGE"  String
+  EXTRA_SKIP_UI  "android.intent.extra.alarm.SKIP_UI"  boolean</code></pre>
+<table>
+<tr><th>Docs entry</th><th>Translated to command</th></tr>
+<tr><td>Constant Value <code>android.intent.action.SET_ALARM</code></td><td><code>-a android.intent.action.SET_ALARM</code></td></tr>
+<tr><td>EXTRA_HOUR (int)</td><td><code>--ei android.intent.extra.alarm.HOUR 7</code></td></tr>
+<tr><td>EXTRA_MINUTES (int)</td><td><code>--ei android.intent.extra.alarm.MINUTES 30</code></td></tr>
+<tr><td>EXTRA_MESSAGE (String)</td><td><code>--es android.intent.extra.alarm.MESSAGE "wake\ up"</code></td></tr>
+</table>
+<p>The <code>--ei</code> flag is for integer extras (the docs say "int" — that's your hint). The full extra <strong>key</strong> is the constant <em>value</em> from the docs (e.g. <code>android.intent.extra.alarm.HOUR</code>), not the constant <em>name</em> (<code>EXTRA_HOUR</code>) — easy to confuse.</p>
+
+<p>If you append <code>--ez android.intent.extra.alarm.SKIP_UI true</code>, the alarm is created silently with no UI shown. Try it.</p>
+
+<h3>Example 3 — Start a 60-second timer</h3>
+
+<div class="solution">
+<pre><code>adb shell am start -a android.intent.action.SET_TIMER \
+  --ei android.intent.extra.alarm.LENGTH 60 \
+  --es android.intent.extra.alarm.MESSAGE "tea"</code></pre>
+<p>Captured: <code>Starting: Intent { act=android.intent.action.SET_TIMER (has extras) }</code></p>
+<p>Phone shows: the Clock app's Timer tab opens with a new 60-second timer labelled "tea", waiting for you to start it. Add <code>--ez android.intent.extra.alarm.SKIP_UI true</code> and the timer starts immediately with no UI.</p>
+</div>
+
+<h4>The repeated pattern</h4>
+<p>By the third example you've seen the structure once and copied it twice. Every "open this app pre-filled" intent on Android is the same shape:</p>
+<ol>
+  <li>Find the action's constant value in the docs → goes after <code>-a</code>.</li>
+  <li>Find the extras' constant values → become <code>--es</code> / <code>--ei</code> / <code>--ez</code> / <code>--el</code> keys depending on type.</li>
+  <li>If a data URI is documented → goes after <code>-d</code>.</li>
+  <li>If the docs say "Optional: SKIP_UI boolean" — useful for testing whether the action <em>also</em> has a non-interactive code path the OS doesn't normally surface.</li>
+</ol>
+
+<h3>Other actions worth trying on your own</h3>
+<table>
+<tr><th>Action constant</th><th>What it does</th><th>Useful extras</th></tr>
+<tr><td><code>android.intent.action.SET_WALLPAPER</code></td><td>Open the wallpaper picker</td><td>none</td></tr>
+<tr><td><code>android.intent.action.OPEN_DOCUMENT</code></td><td>System file picker</td><td><code>--es android.intent.extra.MIME_TYPES "image/*"</code></td></tr>
+<tr><td><code>android.settings.WIFI_SETTINGS</code></td><td>Jump straight to the Wi-Fi settings screen</td><td>none</td></tr>
+<tr><td><code>android.settings.LOCATION_SOURCE_SETTINGS</code></td><td>Jump to Location settings</td><td>none</td></tr>
+<tr><td><code>android.settings.APPLICATION_DETAILS_SETTINGS</code></td><td>Jump to the App-Info screen for a specific package</td><td><code>-d package:&lt;package-name&gt;</code></td></tr>
+</table>
+
+<p>The last one is genuinely useful for the rest of the course — it lets you jump straight to a target app's permission screen from <code>adb</code>, no menu navigation:</p>
+<pre><code>adb shell am start -a android.settings.APPLICATION_DETAILS_SETTINGS -d package:com.example.questionaireapp</code></pre>
+
+<h2>Solution to Exercise 2</h2>
+
+<div class="solution">
+<pre><code>adb shell am start-foreground-service -n il.co.syntax.adbtraining/.MusicPlayerService --es link https://syntax.org.il/xtra/bob.m4a
+
+adb shell dumpsys meminfo | grep syntax
+
+adb shell am force-stop il.co.syntax.adbtraining
+adb shell dumpsys meminfo | grep syntax     # service gone, no entries
+
+adb shell am start -n il.co.syntax.adbtraining/.MainActivity
+adb shell dumpsys meminfo | grep syntax     # activity-only — smaller footprint
+
+# other commands worth knowing:
+adb shell ps | grep syntax
+adb shell dumpsys meminfo il.co.syntax.adbtraining     # OR by PID
+adb shell am force-stop il.co.syntax.adbtraining       # OR by PID</code></pre>
+</div>
+
+<h3>Why the foreground variant is required</h3>
+<p>Android 8 (API 26) introduced background execution limits: an app that has no visible activity can no longer call <code>startService(...)</code>. The replacement, <code>startForegroundService(...)</code> (and the corresponding <code>am start-foreground-service</code>), is a contract: "Android, please launch this even though I'm in the background — I promise to call <code>startForeground(...)</code> within five seconds, which will show a notification and demote me from the 'background' bucket."</p>
+
+<p>If the service forgets to call <code>startForeground</code> in time, the framework throws <code>ForegroundServiceDidNotStartInTimeException</code> and kills the process. Try it: re-run the same command but pass <code>--ez notif false</code> and watch logcat — the service refuses to show its notification, the timer expires, and the process is terminated.</p>
+
+<h3>What the meminfo lifecycle teaches</h3>
+
+<p>Numbers below are real captures from the lab Galaxy A51 (Android 13) — your readings will be within ±10–20% depending on what's been GC'd, paged in, or just-rendered. The <em>relative</em> sizes are what matters.</p>
+
+<table>
+<tr><th>State</th><th>Process / label in <code>dumpsys meminfo</code></th><th>PSS</th><th>RSS</th><th>What you'll see</th></tr>
+<tr><td>After <code>force-stop</code></td><td>—</td><td>—</td><td>—</td><td>Empty. <code>grep adbtraining</code> returns nothing — every process the app owned is gone.</td></tr>
+<tr><td>Activity only (MainActivity, no service)</td><td><code>(pid N / activities)</code></td><td>≈55–67&nbsp;MB</td><td>≈140–150&nbsp;MB</td><td>One row. The <code>/activities</code> suffix tells you the process is hosting a visible Activity.</td></tr>
+<tr><td>Service only (FGS started, no activity)</td><td><code>(pid N)</code> — no suffix</td><td>≈27&nbsp;MB</td><td>≈95&nbsp;MB</td><td>One row, <strong>smaller</strong> than Activity-only. No <code>/activities</code> suffix because no Activity is loaded. Contains MediaPlayer + audio buffers + network stack + the FGS notification, but no inflated UI.</td></tr>
+<tr><td>Activity + service (both running)</td><td><code>(pid N / activities)</code></td><td>≈62&nbsp;MB</td><td>≈153&nbsp;MB</td><td>Still <strong>one row</strong> — both components live in the same process by default. Footprint ≈ Activity-only + a few MB for the service. The PID matches the Activity-only PID; no second process spawned.</td></tr>
+<tr><td>Activity dismissed (swipe-up), service kept</td><td><code>(pid N)</code> — suffix drops</td><td>≈48&nbsp;MB</td><td>≈137&nbsp;MB</td><td>Same PID survives. The <code>/activities</code> suffix is gone because no Activity is loaded, but the process is alive courtesy of the FGS. ~12&nbsp;MB drop as the UI hierarchy is released.</td></tr>
+</table>
+
+<p>Three lessons that come out of these numbers:</p>
+<ul>
+  <li><strong>UI is heavy.</strong> Activity-only (~145&nbsp;MB cross-view) is bigger than service-only (~99&nbsp;MB) — inflated layouts, theme drawables, the View / Compose hierarchy, and graphics buffers cost more than a MediaPlayer plus a network socket.</li>
+  <li><strong>Default IPC is "same process".</strong> Adding the service to an already-running Activity doesn't fork — both components share the process, the PID, and the heap. You see one row in <code>dumpsys meminfo</code>, never two.</li>
+  <li><strong>FGS keeps the process alive after the Activity is gone.</strong> Swipe up to dismiss the Activity (or remove its task) and the process survives — the foreground service is its lifeline. The label loses <code>/activities</code> but the PID stays the same. This is the lifecycle the Day-3 Hidden Recognition capstone exploits.</li>
+</ul>
+
+<h2>Solution to Exercise 3 — Abnormal vs Normal app</h2>
+
+<div class="solution">
+<pre><code>adb install -g abnormal_app.apk
+adb install -g normal_app.apk
+
+adb shell am start -n com.example.abnormalapp/.MainActivity
+# (tap the "Heavy CPU" button on screen)
+
+adb shell dumpsys meminfo com.example.abnormalapp
+adb shell top -n 1 -b | head -20</code></pre>
+</div>
+
+<h3>Captured live on the A51 — baseline vs. heavy-CPU running</h3>
+
+<p><strong>Baseline (activity launched, button NOT yet tapped):</strong></p>
+<pre><code>$ adb shell dumpsys meminfo com.example.abnormalapp
+** MEMINFO in pid 27333 [com.example.abnormalapp] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    10227    10128        0        0    13860   222644   221100     1546
+  Dalvik Heap     4078     3848        0        0    12176   130813   106237    24576
+           Java Heap:    11752                          40548
+         Native Heap:    10128                          13860
+           TOTAL PSS:    63726            TOTAL RSS:   150339</code></pre>
+
+<p><strong>~20 seconds after tapping "start heavy CPU operations":</strong></p>
+<pre><code>$ adb shell dumpsys meminfo com.example.abnormalapp
+** MEMINFO in pid 27333 [com.example.abnormalapp] **
+  Native Heap    11856    11764        0        0    15440   224448   222188     2259
+  Dalvik Heap   140583   140364        0        0   148644   262144   247299    14845
+           Java Heap:   148404                         177212
+         Native Heap:    11764                          15440
+           TOTAL PSS:   197504            TOTAL RSS:   285946</code></pre>
+
+<p>The contrast row-by-row:</p>
+
+<table>
+<tr><th>Row</th><th>Baseline</th><th>After 20 s of Heavy-CPU</th><th>Delta</th></tr>
+<tr><td>Native Heap (PSS)</td><td>~10 MB</td><td>~12 MB</td><td><strong>+2 MB — barely moves</strong></td></tr>
+<tr><td>Dalvik Heap (PSS)</td><td>~3.5 MB</td><td>~140 MB</td><td><strong>+137 MB — explodes</strong></td></tr>
+<tr><td>Java Heap (PSS)</td><td>~11 MB</td><td>~148 MB</td><td><strong>+137 MB — explodes</strong></td></tr>
+<tr><td>TOTAL PSS</td><td>~64 MB</td><td>~198 MB</td><td><strong>+134 MB</strong></td></tr>
+</table>
+
+<p><strong>So where is the abnormality?</strong> Not in the Native Heap (which barely moves) but in the <strong>Dalvik / Java Heap</strong>. That's because the Heavy-CPU button is a Kotlin loop allocating Java/Kotlin objects in tight succession — they all land in ART's managed heap (Dalvik / Java rows are two views of the same data), not the C/C++ malloc heap (Native row). Native Heap would only swell if the work went through JNI to C++ code.</p>
+
+<div class="warn">
+  <strong>Common misreading.</strong> The "Native Heap" line on the detailed row shows <code>Heap Size = 222 MB</code> even at baseline. That's the JVM's <em>address-space reservation ceiling</em>, not actual memory residency. The number that matters for "is this app heavy" is the <strong>PSS</strong> column — and PSS for Native Heap stays at ~10 MB throughout. Always read the PSS column, never the Heap Size column, when asking "how much real RAM is this using?".
+</div>
+
+<p><strong>CPU side, same scenario:</strong></p>
+<pre><code>$ adb shell top -n 1 -b | grep abnormalapp
+27333 u0_a518     10 -10  6.5G  272M  74M S  660   4.8   6:28.67 com.example.abnormalapp</code></pre>
+
+<p><strong>%CPU = 660%</strong> on the abnormal app — pegging six to seven cores worth of compute. The slide's threshold for "abnormal" was 20–30%; we're more than an order of magnitude above it. The normal app at the same screen sits in low single digits, and on its meminfo the Dalvik / Java Heap rows stay near baseline.</p>
+
+<h3>What the contrast teaches</h3>
+<p>Two apps with the same package-name pattern, the same UI, identical install footprint — yet wildly different live behaviour. Without seeing source code, an analyst with only <code>adb</code> access can:</p>
+<ul>
+  <li>Distinguish between them in seconds via <code>dumpsys meminfo</code> and <code>top</code>.</li>
+  <li>Build a detection rule (e.g. "alert if package PSS &gt; 100 MB and CPU sustained &gt; 30% in absence of user interaction").</li>
+  <li>Cross-reference battery and network telemetry (slides 30 covers <code>dumpsys batterystats</code>, <code>dumpsys netstats</code>) to confirm the suspect is also draining battery and beaconing.</li>
+</ul>
+<p>The Day 3 capstone (Hidden Recognition App) and Day 4 vulnerability hunting build on this same primitive: <em>the live resource fingerprint is the most honest description of what an app actually does</em>.</p>
+
+<h2>Solution to Exercise 4 — Package manager</h2>
+
+<h3>4A — Find / uninstall / reinstall (live A51 outputs)</h3>
+<div class="solution">
+<pre><code>$ adb shell pm list packages | grep adbtraining
+package:il.co.syntax.adbtraining
+
+$ adb shell pm path il.co.syntax.adbtraining
+package:/data/app/~~&lt;hash&gt;/il.co.syntax.adbtraining-&lt;hash&gt;/base.apk
+
+$ adb shell am force-stop il.co.syntax.adbtraining
+$ adb shell pm uninstall il.co.syntax.adbtraining
+Success
+
+$ adb install -r -g app-debug.apk
+Success</code></pre>
+</div>
+
+<h3>4B — Pull and inspect WhatsApp's APK (live A51 outputs)</h3>
+<div class="solution">
+<pre><code>$ adb shell pm path com.whatsapp
+package:/data/app/~~n8SEk7s_zwBo7GUtlkGS3A==/com.whatsapp-yHBXy4T2CaT1H2VJhsOuKQ==/base.apk
+package:/data/app/~~n8SEk7s_zwBo7GUtlkGS3A==/com.whatsapp-yHBXy4T2CaT1H2VJhsOuKQ==/split_config.arm64_v8a.apk
+package:/data/app/~~n8SEk7s_zwBo7GUtlkGS3A==/com.whatsapp-yHBXy4T2CaT1H2VJhsOuKQ==/split_config.xxhdpi.apk
+…
+
+# pull only base.apk — splits share its signature so it's enough for analysis
+$ adb pull /data/app/~~n8SEk7s_zwBo7GUtlkGS3A==/com.whatsapp-yHBXy4T2CaT1H2VJhsOuKQ==/base.apk whatsapp.apk
+
+# dump the manifest in a readable tree
+$ aapt2 dump xmltree whatsapp.apk --file AndroidManifest.xml | head -10</code></pre>
+</div>
+
+<h3>The grant/revoke round-trip (also captured)</h3>
+<pre><code>$ adb shell pm revoke il.co.syntax.adbtraining android.permission.POST_NOTIFICATIONS
+$ adb shell dumpsys package il.co.syntax.adbtraining | grep POST_NOTIFICATIONS
+        android.permission.POST_NOTIFICATIONS: granted=false, …
+
+$ adb shell pm grant il.co.syntax.adbtraining android.permission.POST_NOTIFICATIONS
+$ adb shell dumpsys package il.co.syntax.adbtraining | grep POST_NOTIFICATIONS
+        android.permission.POST_NOTIFICATIONS: granted=true, …</code></pre>
+
+<p>The toggle is instantaneous; the framework's permission table is updated atomically. <code>shell</code> can grant/revoke any <em>runtime</em> permission for any <em>installed</em> app whose manifest declares it, by virtue of the <code>android.permission.GRANT_RUNTIME_PERMISSIONS</code> system permission baked into <code>com.android.shell</code>.</p>
+
+<h2>Solution to Exercise 5 — Screen capture</h2>
+
+<div class="solution">
+<pre><code>$ adb shell screencap /sdcard/shot.png
+$ adb pull /sdcard/shot.png
+/sdcard/shot.png: 1 file pulled. (~ 4.3 MB)
+
+$ adb shell screenrecord --time-limit 5 /sdcard/clip.mp4
+# (waits 5 seconds while recording, then exits)
+$ adb pull /sdcard/clip.mp4
+/sdcard/clip.mp4: 1 file pulled. (~ 260 KB for 5s of static homescreen)</code></pre>
+</div>
+
+<h3>Captured file sizes (lab A51, FHD+ display)</h3>
+<table>
+<tr><th>Command</th><th>Output</th></tr>
+<tr><td><code>screencap shot.png</code></td><td>~4.3 MB PNG (uncompressed-ish; PNG of FHD frame)</td></tr>
+<tr><td><code>screenrecord --time-limit 3 clip.mp4</code></td><td>~260 KB MP4 (3 s of mostly-static screen)</td></tr>
+</table>
+
+<p>Both files are world-readable on the device's <code>/sdcard</code>, so any app with <code>READ_EXTERNAL_STORAGE</code> (a runtime permission) — or anyone with <code>adb</code> access at all — can pull them. Lesson for the rest of the course: <code>/sdcard</code> is not a secure storage location.</p>
+
+<h2>Solution to Exercise 6 — Capstone: take a photo from <code>adb</code></h2>
+
+<div class="solution">
+<pre><code>$ adb shell am start -a android.media.action.STILL_IMAGE_CAMERA
+Starting: Intent { act=android.media.action.STILL_IMAGE_CAMERA }
+
+$ adb shell input keyevent KEYCODE_CAMERA
+
+$ adb shell ls -t /sdcard/DCIM/Camera | head -1
+20260506_153852.jpg
+
+$ adb pull /sdcard/DCIM/Camera/20260506_153852.jpg
+/sdcard/DCIM/Camera/20260506_153852.jpg: 1 file pulled.</code></pre>
+</div>
+
+<h3>What just happened, command by command</h3>
+<table>
+<tr><th>Step</th><th>What it triggers on the phone</th></tr>
+<tr><td><code>am start -a android.media.action.STILL_IMAGE_CAMERA</code></td><td>The OS resolves the action against installed intent filters; the Samsung camera app declares <code>STILL_IMAGE_CAMERA</code> in its manifest, so it opens.</td></tr>
+<tr><td><code>input keyevent KEYCODE_CAMERA</code></td><td>Sends the camera-shutter key event to whatever has window focus. Camera app interprets it as "take photo".</td></tr>
+<tr><td><code>ls -t /sdcard/DCIM/Camera \| head -1</code></td><td>Lists the camera folder sorted by modification time (newest first), takes the top entry — the photo we just took. Samsung names files <code>YYYYMMDD_HHMMSS.jpg</code>.</td></tr>
+<tr><td><code>adb pull &lt;path&gt;</code></td><td>Standard adb file copy from device to laptop's current working directory.</td></tr>
+</table>
+
+<p><strong>Why this is the day's capstone:</strong> every primitive shows up. Implicit intent (Exercise 1), key event injection (Exercise 1 task 4), <code>/sdcard</code> file system access (Exercise 5), <code>adb pull</code> (Exercise 5). If you can do this without checking the slide, you've absorbed the four-day mental model: <em>the phone is a remote service, <code>adb</code> is the client</em>.</p>
+
+<h3>Reflection answers</h3>
+
+<p><strong>Q1 — Why does an implicit intent need a data URI?</strong> The action says <em>what kind of operation</em> ("VIEW something", "SENDTO somewhere"); the URI says <em>which thing</em>. Without the URI, the intent resolver has no way to pick between, say, the browser (which handles VIEW http://) and the dialer (which handles VIEW tel:). The URI is the second key the resolver matches against intent filters.</p>
+
+<p><strong>Q2 — Why typed extras?</strong> The receiver's contract is "I expect a String at key X, an int at key Y". If extras were untyped strings, every receiver would have to parse and validate them, and bad input could trip number-parsing crashes inside otherwise-trusted code. Typed extras shift the validation work to the framework's parcel deserializer, which is fast and centrally maintained.</p>
+
+<p><strong>Q3 — Is the music-from-any-URL service a security issue?</strong> Yes, but the locus is the service's design, not <code>am</code>. Any app that exports a service (or accepts launches via <code>start-foreground-service</code> from <code>shell</code>) and treats an arbitrary URL as input must validate that URL — at minimum HTTPS, ideally an allowlist of hosts. <code>am</code> is just the messenger; if someone can talk to the service via binder (e.g. another app using the same intent), the same exposure exists. Lesson for app authors: assume any string that crosses the IPC boundary is hostile.</p>
+
+<footer>
+  <p>Back to the drill: <a href="ADB_Drill.html">ADB_Drill.html</a></p>
+  <p class="meta">Course: Android Security · Day 2 · ADB drill solution.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,33 @@
+from pydantic import BaseModel
+from pydantic_ai import Agent
+
+# 1. Define your desired output structure
+class UserProfile(BaseModel):
+    first_name: str
+    last_name: str
+    age: int
+    hobbies: list[str]
+    is_premium_member: bool
+
+# 2. Assign the output_type to the Agent
+agent = Agent(
+    "google:gemini-2.5-flash",
+    output_type=UserProfile,
+    instructions="Extract the user information from the provided text."
+)
+
+messy_input = """
+Yeah so my name is Jonathan Doe, I'm 34 years old. 
+I really like playing tennis and reading sci-fi. 
+Oh, and I just upgraded my account to the paid tier yesterday!
+"""
+
+# 3. Run the agent
+result = agent.run_sync(messy_input)
+
+# The result is a fully validated Python object, not just a string!
+profile = result.output
+
+print(f"Name: {profile.first_name} {profile.last_name}")
+print(f"Hobbies: {profile.hobbies}")
+print(f"Premium? {profile.is_premium_member}")

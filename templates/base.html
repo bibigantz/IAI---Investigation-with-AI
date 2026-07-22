@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAI - Investigate with AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">
+            <div class="brand-logo">IAI</div>
+            <div>
+                <span class="brand-text">Investigate with AI</span>
+                <span class="brand-tag">Multi-Agent Swarm</span>
+            </div>
+        </a>
+
+        <div class="nav-links">
+            <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">📊 Launch & Telemetry</a>
+            <a href="/topology" class="nav-link {% if request.path == '/topology' %}active{% endif %}">🗺️ Dynamic Topology</a>
+            <a href="/agents" class="nav-link {% if request.path == '/agents' %}active{% endif %}">⚙️ Agent Control Center</a>
+        </div>
+
+        <div class="status-controls">
+            <div class="mode-badge">
+                <span id="mode-text">SUPERVISED</span>
+                <button class="mode-toggle-btn active supervised" id="btn-toggle-mode" onclick="toggleMode()">
+                    Switch Mode
+                </button>
+            </div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+                Pending HITL: <span id="nav-pending-badge" style="color: var(--accent-yellow); font-weight:700;">0</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

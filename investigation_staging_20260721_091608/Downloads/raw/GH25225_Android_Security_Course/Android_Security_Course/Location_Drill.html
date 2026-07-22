@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Location Drill — Day 3 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+details { margin:10px 0; padding:8px 14px; background:var(--hint-bg); border-left:3px solid var(--hint-border); border-radius:3px; }
+details > summary { cursor:pointer; font-weight:600; color:var(--hint-border); }
+details[open] > summary { margin-bottom:8px; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+.meta { color:var(--muted); font-size:0.92em; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.exercise { background:var(--accent-soft); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--accent); }
+.exercise h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Location Drill — Track a phone with permissions you don't tap to grant</h1>
+<p class="lede">Drive a location-tracking app entirely through ADB — install, read its manifest, grant runtime permissions silently, start the activity, start the service, and (the interesting part) restart the same service from <em>idle state</em> using its declared intent action and the <code>start-foreground-service</code> command. Slides 45–49 of <em>Android Application.pptx</em>.</p>
+
+<h2>What you'll learn</h2>
+<ul>
+  <li>How to extract the package and component names from any APK using <code>aapt2 dump xmltree</code> — without unzipping the file by hand.</li>
+  <li>How <code>pm grant</code> bypasses the runtime permission dialog by writing directly to the package manager — only available because <code>shell</code> holds the right system-level permissions.</li>
+  <li>The difference between <code>startservice</code> (works only when the app has a foreground component) and <code>start-foreground-service</code> (works from idle, but the service must promote itself within ~5 s).</li>
+  <li>Why the foreground-service-with-notification model is what makes "background" location tracking actually possible on Android 8+.</li>
+</ul>
+
+<h2>1. Background — what does the location app do?</h2>
+
+<p>The <code>il.co.syntax.location</code> app is a deliberately simple location reader: tap "Start" on the main activity, it requests <code>ACCESS_FINE_LOCATION</code>, then a service connects to Google Play Services' Fused Location provider and prints street-level addresses to the screen. To stay alive while the user navigates away, it runs as a <strong>foreground service</strong> with a persistent notification — that's the contract the OS demands for any service that wants to be alive when no activity is visible.</p>
+
+<p>The drill turns the same flow on its head: instead of tapping anything, you'll drive every step from <code>adb</code>, including granting the permission and starting the service from total idle.</p>
+
+<h2>2. Reading an APK's manifest with <code>aapt2</code></h2>
+
+<p><code>aapt2</code> ships with the Android SDK build-tools. Two of its <code>dump</code> subcommands are particularly useful here:</p>
+
+<pre><code>aapt2 dump packagename app-location.apk
+aapt2 dump xmltree   app-location.apk --file AndroidManifest.xml</code></pre>
+
+<p>The first prints the package name in a single line. The second decodes the binary <code>AndroidManifest.xml</code> from inside the APK and prints it as a readable tree, including every activity name, every service name, every <code>intent-filter</code>, and every requested permission.</p>
+
+<p>You'll use this output to find: the package, the main activity class, the location service class, the runtime permissions the app needs, and (for the second part of the drill) the custom action string the service is registered for.</p>
+
+<div class="warn">
+  <strong>Setup before you start.</strong> The lab APK is in the course folder root as <code>app-location.apk</code>. Install it once, with <code>-g</code> if you want to skip the runtime-permission steps and move straight to the second part:
+  <pre><code>adb install -r app-location.apk
+# OR, to grant every permission upfront and skip the permission-grant exercise:
+adb install -r -g app-location.apk</code></pre>
+</div>
+
+<div class="exercise">
+  <h3>Exercise — Drive the location app entirely from ADB (slides 45–48)</h3>
+  <p>Goal: never touch the phone. Make the app function as intended — start the main activity, grant location and notifications permissions, start the service, watch the address appear, force-stop. Then do it again, this time starting the service from <em>idle</em> with the right action.</p>
+
+  <ol>
+    <li>Install the app (<em>without</em> <code>-g</code> for now — you'll grant permissions in step 4).</li>
+    <li>Read the manifest. Find the package name, the main activity class, the location service class, and the custom action string the service is registered to receive (you'll need it later).</li>
+    <li>Start the main activity by name.</li>
+    <li>Grant the runtime location permission. On Android 13+ also grant <code>POST_NOTIFICATIONS</code> so the service's notification can actually appear.</li>
+    <li>Start the location service explicitly (<code>-n</code>). Confirm the address shows on the activity.</li>
+    <li>Force-stop the app.</li>
+    <li><strong>Revoke the permission and try again.</strong> Revoke <code>ACCESS_FINE_LOCATION</code> from <em>this same install</em>, then start the activity, then start the service. Both commands return the same "started" message you've seen before — but does the service actually <em>do</em> anything? Open <code>logcat</code> while you trigger the service and read what's thrown. The instructive question: <em>which layer enforces the permission, the activity manager or Fused Location itself?</em></li>
+    <li>Once you're done observing, uninstall the app to reset state for the twist.</li>
+    <li><strong>Twist:</strong> reinstall, grant the permissions again, then force-stop the app so it's <em>idle</em>. Now start the service <em>without</em> opening the activity, using the service's manifest-declared <strong>action</strong> instead of an explicit component. Why does this need <code>start-foreground-service</code> and not <code>startservice</code>?</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 — Reading the manifest output</summary>
+    <p><code>aapt2 dump xmltree</code> prints lines like:</p>
+    <pre><code>E: activity (line=14)
+  A: android:name(0x01010003)="il.co.syntax.location.MainActivity"</code></pre>
+    <p>Every <code>activity</code>, <code>service</code>, and <code>receiver</code> entry has an <code>android:name</code> attribute — that's the class. <code>intent-filter</code> entries have nested <code>action</code> entries with their own names — that's the action string you'll use in step 7. The location service has <em>two</em> filter actions; pick the one that does what you want.</p>
+  </details>
+
+  <details>
+    <summary>Hint 2 — Granting runtime permissions silently</summary>
+    <p>The <code>pm grant</code> command writes directly to the package manager's grant table — no UI involved. Use the full permission string (the one in the manifest <code>uses-permission</code> entries):</p>
+    <pre><code>adb shell pm grant &lt;package&gt; &lt;android.permission.XXX&gt;</code></pre>
+    <p>You can only <code>pm grant</code> permissions the app declared in its manifest, so check the manifest first.</p>
+  </details>
+
+  <details>
+    <summary>Hint 3 — What does "without permission" actually fail at?</summary>
+    <p>Both <code>am start -n …</code> and <code>am startservice -n …</code> succeed at the activity-manager layer — you'll see the same "Starting…" lines you've seen before. The components <em>launch</em>. The interesting question is what happens next:</p>
+    <ul>
+      <li><strong>On the activity</strong> — it opens, but instead of the address it shows an <strong>error message in its UI</strong>. The slide deck describes the app's design: <em>"once the app receives the runtime location permission it can start the location service"</em> (slide 44). In other words, the app's own code calls <code>checkSelfPermission(ACCESS_FINE_LOCATION)</code> on every "Start tracking" attempt and surfaces a permission-missing message to the user when it fails. The <em>app itself</em> is the first gatekeeper.</li>
+      <li><strong>On the service</strong> — its <code>onStartCommand</code> runs, but the moment it asks <code>FusedLocationProviderClient.requestLocationUpdates(...)</code>, Google Play Services checks the calling UID's permission and throws <code>SecurityException: Caller … doesn't hold ACCESS_FINE_LOCATION</code> in <code>logcat</code>. Even if the app forgot its own gate, the SDK would still refuse.</li>
+    </ul>
+    <p>The lesson: <strong>permissions are enforced in two places — the app's own UI check, and the privileged API the app tries to call.</strong> Both are doing the right thing here. The activity manager itself does <em>not</em> gate per-component access on runtime permissions; it just launches what you tell it to. That's why <code>am start</code> "succeeded" — the OS isn't refusing the launch, the app and the SDK are refusing the operation.</p>
+    <p>To see both signals at once: <code>adb logcat -v time | grep -iE "location|securityexception"</code> in one terminal, then re-trigger the service in another.</p>
+  </details>
+
+  <details>
+    <summary>Hint 4 — Why <code>startservice</code> from idle won't work</summary>
+    <p>Android 8 (API 26) introduced background execution limits. From the slide: "An app with no running activities can't launch a regular Service but must use a Foreground Service that comes with a Notification." Translation: <code>startservice</code> from idle throws <code>IllegalStateException</code>; <code>start-foreground-service</code> works because it forces the service to display a notification within 5 seconds, which counts as "user-visible".</p>
+  </details>
+
+  <details>
+    <summary>Hint 5 — Starting a service by action instead of component</summary>
+    <p>Same syntax as activities, but use the service's intent-filter action:</p>
+    <pre><code>adb shell am start-foreground-service -a &lt;the-custom-action&gt;</code></pre>
+    <p>Don't pass <code>-n</code> — that's for explicit component, and you'd be back to the easy case. The point is to discover that the service can be addressed implicitly because it declared a public action in its manifest.</p>
+  </details>
+
+  <details>
+    <summary>Hint 6 — Confirming location updates are happening</summary>
+    <p>The app prints the resolved address on screen — but in idle state there's no UI. Either re-open the activity (<code>am start</code>) and check the activity's display, or use logcat:</p>
+    <pre><code>adb logcat -v time | grep -i location</code></pre>
+  </details>
+</div>
+
+<h2>3. Why "background location" is actually foreground location with a notification</h2>
+
+<p>Slide 49 reminds you of a subtle point: even though the app keeps running when you press Home, in Android terminology this is still <em>foreground</em> — because the foreground service notification is visible. True <em>background</em> location (geofencing in deep idle, family-tracker in screen-off, missile alerts) requires a different runtime permission, <code>ACCESS_BACKGROUND_LOCATION</code>, which the user must grant in a separate Settings flow on Android 10+.</p>
+
+<p>Why two permissions? Because background access is genuinely more sensitive — there's no notification, no UI, the app is invisible to the user yet still pulling GPS. Google split the permission so a tracking app can't quietly upgrade itself from "while the app is in use" to "always" — the user has to consent to each tier explicitly.</p>
+
+<h2>Reflection</h2>
+<ol>
+  <li>The slide hints that on Android 11+, getting <code>ACCESS_BACKGROUND_LOCATION</code> requires a Settings UI flow rather than a simple runtime prompt. Why did Google add this extra friction? What attack does it block?</li>
+  <li>You used <code>pm grant</code> to silently grant a runtime permission. From a defender's perspective: should the package manager log every <code>pm grant</code> call to a place the user can audit? What would that change?</li>
+  <li>Compare this drill to the SMS deep-link drill. Both involve services performing a privileged operation on behalf of an unauthenticated trigger. Identify one common defensive pattern that would harden both apps.</li>
+</ol>
+
+<footer>
+  <p>Solutions and worked outputs: <a href="Location_Solution.html">Location_Solution.html</a></p>
+  <p class="meta">Course: Android Security · Day 3 · Location drill (Android Application slides 45–49). All commands taken verbatim from the slide deck.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

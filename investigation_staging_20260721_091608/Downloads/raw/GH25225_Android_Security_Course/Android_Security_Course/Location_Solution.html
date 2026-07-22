@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Location Drill — Solution — Day 3</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.solution { background:var(--solution-bg); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--solution-border); }
+.solution h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Location Drill — Solutions</h1>
+<p class="lede">All commands taken from slides 46–48 of <em>Android Application.pptx</em>. Outputs captured live on the lab Galaxy A51.</p>
+
+<h2>Solution — basic assignment (slide 46)</h2>
+<div class="solution">
+<pre><code>adb install app-location.apk
+aapt2 dump xmltree app-location.apk --file AndroidManifest.xml
+adb shell am start -n il.co.syntax.location/.MainActivity
+adb shell pm grant il.co.syntax.location android.permission.ACCESS_FINE_LOCATION
+adb shell pm grant il.co.syntax.location android.permission.POST_NOTIFICATIONS    # Android 13+
+adb shell am startservice -n il.co.syntax.location/.LocationUpdatesService
+adb shell am force-stop il.co.syntax.location
+adb shell pm uninstall il.co.syntax.location</code></pre>
+</div>
+
+<h3>What the manifest tree tells you</h3>
+
+<p>Running <code>aapt2 dump xmltree app-location.apk --file AndroidManifest.xml</code> on the lab APK produces (filtered to the interesting lines):</p>
+<pre><code>uses-permission android:name="android.permission.FOREGROUND_SERVICE"
+uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"
+uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
+uses-permission android:name="android.permission.POST_NOTIFICATIONS"
+activity android:name="il.co.syntax.location.MainActivity"
+    intent-filter:
+      action android:name="android.intent.action.MAIN"
+      category android:name="android.intent.category.LAUNCHER"
+service android:name="il.co.syntax.location.LocationUpdatesService"
+    intent-filter:
+      action android:name="il.co.syntax.location_tracker_action"</code></pre>
+<p>That last action — <code>il.co.syntax.location_tracker_action</code> — is the implicit-intent name you need for the second part.</p>
+
+<h3>What you'll see while the service runs</h3>
+<pre><code>$ adb shell am start -n il.co.syntax.location/.MainActivity
+Starting: Intent { cmp=il.co.syntax.location/.MainActivity }
+
+$ adb shell pm grant il.co.syntax.location android.permission.ACCESS_FINE_LOCATION
+$ adb shell pm grant il.co.syntax.location android.permission.POST_NOTIFICATIONS
+
+$ adb shell am startservice -n il.co.syntax.location/.LocationUpdatesService
+Starting service: Intent { cmp=il.co.syntax.location/.LocationUpdatesService }</code></pre>
+
+<h2>Solution — activating without permission (slide 47)</h2>
+
+<div class="solution">
+<pre><code># pre-test: install fresh, no -g
+adb install app-location.apk
+adb shell am start -n il.co.syntax.location/.MainActivity
+adb shell am startservice -n il.co.syntax.location/.LocationUpdatesService
+# Result: service starts but Fused Location refuses → SecurityException in logcat
+
+# fix:
+adb shell pm grant il.co.syntax.location android.permission.ACCESS_FINE_LOCATION
+adb shell am startservice -n il.co.syntax.location/.LocationUpdatesService
+adb shell am force-stop il.co.syntax.location</code></pre>
+</div>
+
+<p>The lesson: starting the service is permitted, but the Fused Location call inside the service throws because the calling UID has no <code>ACCESS_FINE_LOCATION</code>. Watch <code>logcat</code> while you trigger this — the SecurityException stack trace points at the <code>FusedLocationProviderClient.requestLocationUpdates</code> call.</p>
+
+<h2>Solution — restart from idle with the action (slide 48)</h2>
+
+<div class="solution">
+<pre><code>adb shell pm grant il.co.syntax.location android.permission.POST_NOTIFICATIONS    # Android 13+
+
+# start by ACTION (no -n), and use start-foreground-service:
+adb shell am start-foreground-service -a il.co.syntax.location_tracker_action</code></pre>
+</div>
+
+<h3>Why this command shape, and not the other ones</h3>
+
+<table>
+<tr><th>Variation</th><th>Result</th></tr>
+<tr><td><code>am startservice -a il.co.syntax.location_tracker_action</code></td><td>Fails — the app is in idle (no live activity), so Android 8+ background-service rules forbid starting a regular service.</td></tr>
+<tr><td><code>am start-foreground-service -n &lt;cls&gt;</code></td><td>Works — explicit component, foreground variant. Same outcome as below, but doesn't exercise the implicit-intent matching.</td></tr>
+<tr><td><code>am start-foreground-service -a il.co.syntax.location_tracker_action</code> ✓</td><td>Works because the service's manifest filter declares the action. The OS resolves the action to the <code>LocationUpdatesService</code> class, then bypasses the background-start ban thanks to the foreground promise.</td></tr>
+</table>
+
+<p>Captured live on the A51:</p>
+<pre><code>$ adb shell am start-foreground-service -a il.co.syntax.location_tracker_action
+Starting service: Intent { act=il.co.syntax.location_tracker_action }</code></pre>
+
+<p>The service shows its persistent notification within ~5 s (the foreground promise) and starts pulling location updates. From the user's perspective the app is "alive" forever, despite never having opened the activity.</p>
+
+<h2>Reflection answers</h2>
+
+<p><strong>Q1 — Why is <code>ACCESS_BACKGROUND_LOCATION</code> in a separate Settings flow?</strong> Google's data shows that runtime prompts get dismissed reflexively. Burying background-location consent inside the Settings screen forces a user to actively navigate there, read what they're agreeing to, and toggle a switch. The friction is the point: it blocks the "while-in-use → always" silent escalation that was a real abuse pattern from circa 2016 family-tracker and ad-fingerprinting apps.</p>
+
+<p><strong>Q2 — Should <code>pm grant</code> be audited?</strong> Yes — and on production phones it effectively is, because <code>pm grant</code> requires the <code>android.permission.GRANT_RUNTIME_PERMISSIONS</code> system permission, which only signature-or-system apps and the <code>shell</code> UID hold. From a defender's standpoint, the audit point isn't "what did <code>pm grant</code> do" but "who got <code>shell</code>". USB debugging is the boundary; once it's enabled and authorised, a <code>pm grant</code> log is just one symptom among many. Production-grade EMM/MDM products do log all <code>pm grant</code> attempts on managed devices.</p>
+
+<p><strong>Q3 — Common pattern with the deep-link drill?</strong> Both apps perform a privileged action on behalf of an unauthenticated trigger. The defensive pattern that hardens both: <strong>require an explicit user gesture inside the app's own UI before performing the privileged op</strong>. For the SMS app, that means a confirmation screen even after a deep link arrives. For the location app, that means the service should refuse to start updates unless the activity has been resumed at least once in the last <em>N</em> minutes — the foreground service notification alone isn't enough. The general principle: external callers (intents, deep links, broadcasts) should be treated as suspect; the app's own UI is the one trusted gate.</p>
+
+<footer>
+  <p>Back to the drill: <a href="Location_Drill.html">Location_Drill.html</a></p>
+  <p class="meta">Course: Android Security · Day 3 · Location drill solution.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
