@@ -78,19 +78,19 @@ def categorize_extracted_strings(strings_list: List[str]) -> Dict[str, List[str]
             r"[a-zA-Z0-9.-]+\.(?:com|org|net|io|ru|cn|xyz|top|info|biz|cc|tk|ml|ga|cf|pw)|Mozilla/[0-9]|User-Agent:)",
             re.IGNORECASE,
         ),
-        "obfuscated": re.compile(
-            r"([A-Za-z0-9+/]{40,}={0,2}|0x[0-9a-fA-F]{16,}|[a-fA-F0-9]{64}|\b[A-Z][a-z]+[A-Z][a-zA-Z]+)",
-            re.IGNORECASE,
-        ),
         "commands": re.compile(
-            r"(powershell|cmd\.exe|wscript|cscript|mshta|rundll32|regsvr32|bitsadmin|certutil|wmic|psexec|paexec|"
-            r"-enc|-EncodedCommand|-ExecutionPolicy|Bypass|-nop|-w hidden|invoke-expression|iex|downloadstring|"
-            r"frombase64string|webclient|httprequest|wininet|internetopen)",
+            r"\b(powershell|cmd\.exe|wscript|cscript|mshta|rundll32|regsvr32|bitsadmin|certutil|wmic|psexec|paexec|"
+            r"-enc|-EncodedCommand|-ExecutionPolicy|Bypass|-nop|-w\s*hidden|invoke-expression|iex|downloadstring|"
+            r"frombase64string|webclient|httprequest|wininet|internetopen)\b",
             re.IGNORECASE,
         ),
         "paths_registry": re.compile(
             r"(HKLM\\|HKCU\\|Software\\Microsoft\\Windows\\CurrentVersion|System32\\|"
             r"%TEMP%|%APPDATA%|%USERPROFILE%|%WINDIR%|[a-zA-Z]:\\Windows\\[^\s\"']+|[a-zA-Z]:\\[^\s\"']+\.(exe|dll|bat|ps1|vbs|dat|tmp))",
+            re.IGNORECASE,
+        ),
+        "obfuscated": re.compile(
+            r"([A-Za-z0-9+/]{40,}={0,2}|0x[0-9a-fA-F]{16,}|[a-fA-F0-9]{64}|\b[A-Z][a-z]+[A-Z][a-zA-Z]+)",
             re.IGNORECASE,
         ),
         "debug_metadata": re.compile(
@@ -193,31 +193,48 @@ def extract_strings_from_file(filepath: Path, min_len: int = 4) -> Dict[str, Any
 def extract_strings_from_directory(dir_path: Path, min_len: int = 4, max_files: int = 50) -> List[Dict[str, Any]]:
     """
     Extract strings from all binary files in a directory.
-    Prioritizes executable files and limits total files processed.
+    Prioritizes executable files but also processes text files, databases, and unknown extensions.
     """
     results = []
+    # High priority: executables and libraries
     executable_extensions = {'.exe', '.dll', '.sys', '.scr', '.com', '.msi', '.cpl', '.ocx'}
-    other_extensions = {'.bin', '.dat', '.drv', '.efi'}
+    # Medium priority: binary data files
+    data_extensions = {'.bin', '.dat', '.drv', '.efi', '.db', '.sqlite', '.edb'}
+    # Low priority: text files and temp files that might contain embedded binaries
+    text_extensions = {'.txt', '.log', '.cfg', '.ini', '.xml', '.json', '.tmp', '.temp'}
     
     # Collect candidate files
     candidates = []
     for root, _, files in os.walk(dir_path):
         for fname in files:
             fpath = Path(root) / fname
+            if not fpath.exists() or not fpath.is_file():
+                continue
             ext = fpath.suffix.lower()
-            if ext in executable_extensions or ext in other_extensions:
+            # Skip very small files (< 10 bytes)
+            try:
+                if fpath.stat().st_size < 10:
+                    continue
+            except:
+                continue
+                
+            if ext in executable_extensions:
                 candidates.append((fpath, 0))  # Priority 0 for executables
-            elif ext == '' or ext in {'.tmp', '.temp'}:
-                candidates.append((fpath, 1))  # Priority 1 for extensionless/temp
+            elif ext in data_extensions:
+                candidates.append((fpath, 1))  # Priority 1 for data files
+            elif ext == '' or ext in text_extensions:
+                candidates.append((fpath, 2))  # Priority 2 for text/extensionless
+            else:
+                # Process any other file type with lowest priority
+                candidates.append((fpath, 3))
     
     # Sort by priority then by size (smaller first for faster processing)
     candidates.sort(key=lambda x: (x[1], x[0].stat().st_size if x[0].exists() else 0))
     
     # Process limited number of files
     for fpath, _ in candidates[:max_files]:
-        if fpath.exists() and fpath.is_file():
-            result = extract_strings_from_file(fpath, min_len)
-            results.append(result)
+        result = extract_strings_from_file(fpath, min_len)
+        results.append(result)
     
     return results
 
