@@ -1,0 +1,431 @@
+{
+  "Collection": {
+    "Registry": {
+      "files_found": 6,
+      "files_copied": 2,
+      "files_failed": 4,
+      "patterns": {
+        "Windows\\System32\\config\\SYSTEM": {
+          "matched": 0
+        },
+        "Windows\\System32\\config\\SOFTWARE": {
+          "matched": 0
+        },
+        "Windows\\System32\\config\\SAM": {
+          "matched": 0
+        },
+        "Windows\\System32\\config\\SECURITY": {
+          "matched": 0
+        },
+        "Users\\*\\NTUSER.DAT": {
+          "matched_entries": 5,
+          "files_copied": 2,
+          "files_failed": 3
+        },
+        "Users\\*\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        }
+      }
+    },
+    "Prefetch": {
+      "files_found": 0,
+      "files_copied": 0,
+      "files_failed": 0,
+      "patterns": {
+        "Windows\\Prefetch\\*.pf": {
+          "matched": 0
+        }
+      }
+    },
+    "Amcache": {
+      "files_found": 0,
+      "files_copied": 0,
+      "files_failed": 0,
+      "patterns": {
+        "Windows\\AppCompat\\Programs\\Amcache.hve": {
+          "matched": 0
+        }
+      }
+    },
+    "Logs": {
+      "files_found": 7,
+      "files_copied": 0,
+      "files_failed": 7,
+      "patterns": {
+        "Windows\\System32\\winevt\\Logs\\System.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        },
+        "Windows\\System32\\winevt\\Logs\\Security.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        },
+        "Windows\\System32\\winevt\\Logs\\Application.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        },
+        "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-Sysmon%4Operational.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        },
+        "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        },
+        "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TaskScheduler%4Operational.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        },
+        "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx": {
+          "matched_entries": 1,
+          "files_copied": 0,
+          "files_failed": 1
+        }
+      }
+    },
+    "Thumbcache": {
+      "files_found": 15,
+      "files_copied": 15,
+      "files_failed": 0,
+      "patterns": {
+        "Users\\*\\AppData\\Local\\Microsoft\\Windows\\Explorer\\thumbcache_*.db": {
+          "matched_entries": 15,
+          "files_copied": 15,
+          "files_failed": 0
+        }
+      }
+    },
+    "JumpLists": {
+      "files_found": 33,
+      "files_copied": 33,
+      "files_failed": 0,
+      "patterns": {
+        "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\AutomaticDestinations\\*": {
+          "matched_entries": 17,
+          "files_copied": 17,
+          "files_failed": 0
+        },
+        "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\*": {
+          "matched_entries": 16,
+          "files_copied": 16,
+          "files_failed": 0
+        }
+      }
+    },
+    "RecycleBin": {
+      "files_found": 0,
+      "files_copied": 0,
+      "files_failed": 0,
+      "patterns": {
+        "$Recycle.Bin\\*\\$I*": {
+          "matched": 0
+        },
+        "$Recycle.Bin\\*\\$R*": {
+          "matched": 0
+        }
+      }
+    },
+    "SRUM": {
+      "files_found": 0,
+      "files_copied": 0,
+      "files_failed": 0,
+      "patterns": {
+        "Windows\\System32\\sru\\SRUDB.dat": {
+          "matched": 0
+        },
+        "Windows\\System32\\sru\\*.log": {
+          "matched": 0
+        }
+      }
+    },
+    "PowerShellHistory": {
+      "files_found": 1,
+      "files_copied": 1,
+      "files_failed": 0,
+      "patterns": {
+        "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt": {
+          "matched_entries": 1,
+          "files_copied": 1,
+          "files_failed": 0
+        }
+      }
+    }
+  },
+  "Parsing": {},
+  "HashVerification": {
+    "algorithm": "sha256",
+    "total_files": 105,
+    "verified": 94,
+    "mismatched": 0,
+    "hash_errors": 11,
+    "failures": [
+      {
+        "timestamp": "2026-07-21T09:16:11.956052",
+        "category": "Registry",
+        "source_path": "C:\\Users\\All Users\\NTUSER.DAT",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\All Users_NTUSER.DAT",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\All Users\\\\NTUSER.DAT'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.972559",
+        "category": "Registry",
+        "source_path": "C:\\Users\\GH25225\\NTUSER.DAT",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\GH25225_NTUSER.DAT",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\GH25225\\\\NTUSER.DAT'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.972846",
+        "category": "Registry",
+        "source_path": "C:\\Users\\TEMP\\NTUSER.DAT",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\TEMP_NTUSER.DAT",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\TEMP\\\\NTUSER.DAT'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.973747",
+        "category": "Registry",
+        "source_path": "C:\\Users\\GH25225\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\GH25225_UsrClass.dat",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\GH25225\\\\AppData\\\\Local\\\\Microsoft\\\\Windows\\\\UsrClass.dat'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.975468",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\System.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\System.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\System.evtx'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.975623",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\Security.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Security.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Security.evtx'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.975778",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\Application.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Application.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Application.evtx'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.975931",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-Sysmon%4Operational.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-Sysmon%4Operational.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-Sysmon%4Operational.evtx'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.976094",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-PowerShell%4Operational.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-PowerShell%4Operational.evtx'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.976247",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TaskScheduler%4Operational.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-TaskScheduler%4Operational.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-TaskScheduler%4Operational.evtx'"
+      },
+      {
+        "timestamp": "2026-07-21T09:16:11.976412",
+        "category": "Logs",
+        "source_path": "C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx",
+        "dest_path": "C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx",
+        "algorithm": "sha256",
+        "source_hash": null,
+        "dest_hash": null,
+        "size_bytes": null,
+        "verified": false,
+        "error": "Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx'"
+      }
+    ]
+  },
+  "General": {
+    "Successes": [
+      "Loaded 19 artifact categories from C:\\Users\\GH25225\\Downloads\\files (4)\\collector_paths.json",
+      "Staging environment created successfully.",
+      "Collected & hash-verified -> Default_NTUSER.DAT (sha256=74891e9811d5...)",
+      "Collected & hash-verified -> Default User_NTUSER.DAT (sha256=74891e9811d5...)",
+      "Collected & hash-verified -> GH25225_thumbcache_1280.db (sha256=d88a43f2110c...)",
+      "Collected & hash-verified -> GH25225_thumbcache_16.db (sha256=c3eefc45cb10...)",
+      "Collected & hash-verified -> GH25225_thumbcache_1920.db (sha256=67219e5ad98a...)",
+      "Collected & hash-verified -> GH25225_thumbcache_256.db (sha256=2785f10b99bf...)",
+      "Collected & hash-verified -> GH25225_thumbcache_2560.db (sha256=d241584a3fd4...)",
+      "Collected & hash-verified -> GH25225_thumbcache_32.db (sha256=f786681fb47f...)",
+      "Collected & hash-verified -> GH25225_thumbcache_48.db (sha256=f407f463b5c9...)",
+      "Collected & hash-verified -> GH25225_thumbcache_768.db (sha256=d17c2595bd05...)",
+      "Collected & hash-verified -> GH25225_thumbcache_96.db (sha256=33b10dba571a...)",
+      "Collected & hash-verified -> GH25225_thumbcache_custom_stream.db (sha256=77739084a27c...)",
+      "Collected & hash-verified -> GH25225_thumbcache_exif.db (sha256=ee1ed3b49720...)",
+      "Collected & hash-verified -> GH25225_thumbcache_idx.db (sha256=b5406926154d...)",
+      "Collected & hash-verified -> GH25225_thumbcache_sr.db (sha256=3c9002caedf0...)",
+      "Collected & hash-verified -> GH25225_thumbcache_wide.db (sha256=1b1aed169f2a...)",
+      "Collected & hash-verified -> GH25225_thumbcache_wide_alternate.db (sha256=e8830e7ac408...)",
+      "Collected & hash-verified -> GH25225_1c7a9be1b15a03ba.automaticDestinations-ms (sha256=9e27b6575719...)",
+      "Collected & hash-verified -> GH25225_1ced32d74a95c7bc.automaticDestinations-ms (sha256=950caf4a8415...)",
+      "Collected & hash-verified -> GH25225_4b0d3d532ed11013.automaticDestinations-ms (sha256=1dc0c8d7304c...)",
+      "Collected & hash-verified -> GH25225_5a2098e080cf7ac4.automaticDestinations-ms (sha256=151a69ed7796...)",
+      "Collected & hash-verified -> GH25225_5b60ff9d777810f7.automaticDestinations-ms (sha256=34fb088a7e18...)",
+      "Collected & hash-verified -> GH25225_5d696d521de238c3.automaticDestinations-ms (sha256=d98f0bfaa619...)",
+      "Collected & hash-verified -> GH25225_5f7b5f1e01b83767.automaticDestinations-ms (sha256=864335af3bc9...)",
+      "Collected & hash-verified -> GH25225_7cef0736d236e45a.automaticDestinations-ms (sha256=3840d748bc8d...)",
+      "Collected & hash-verified -> GH25225_7e4dca80246863e3.automaticDestinations-ms (sha256=15bd5fb34d1f...)",
+      "Collected & hash-verified -> GH25225_9a165f62edbfa161.automaticDestinations-ms (sha256=ec96c00d53cd...)",
+      "Collected & hash-verified -> GH25225_a52b0784bd667468.automaticDestinations-ms (sha256=ada1035f852e...)",
+      "Collected & hash-verified -> GH25225_a61657a5e5dfbdc.automaticDestinations-ms (sha256=16be35ac475d...)",
+      "Collected & hash-verified -> GH25225_cb05cc8c5a282971.automaticDestinations-ms (sha256=f0463e443a80...)",
+      "Collected & hash-verified -> GH25225_ccba5a5986c77e43.automaticDestinations-ms (sha256=98abce128b9c...)",
+      "Collected & hash-verified -> GH25225_dd7c3b1adb1c168b.automaticDestinations-ms (sha256=8fd254f02e42...)",
+      "Collected & hash-verified -> GH25225_f01b4d95cf55d32a.automaticDestinations-ms (sha256=adbc0130e9ba...)",
+      "Collected & hash-verified -> GH25225_fb3b0dbfee58fac8.automaticDestinations-ms (sha256=abfd58c093d1...)",
+      "Collected & hash-verified -> GH25225_16f2f0042ddbe0e8.customDestinations-ms (sha256=2ec7013d41e4...)",
+      "Collected & hash-verified -> GH25225_1c7a9be1b15a03ba.customDestinations-ms (sha256=b7f7a60fbcdb...)",
+      "Collected & hash-verified -> GH25225_1ced32d74a95c7bc.customDestinations-ms (sha256=64cbd73edb3d...)",
+      "Collected & hash-verified -> GH25225_2a2e0412b8ad04a2.customDestinations-ms (sha256=c276f42360ba...)",
+      "Collected & hash-verified -> GH25225_532001fc78e4e796.customDestinations-ms (sha256=a085a72dcfc4...)",
+      "Collected & hash-verified -> GH25225_532001fc78e4e796.customDestinations-ms~RFe3ec.TMP (sha256=c49ce77c9dd6...)",
+      "Collected & hash-verified -> GH25225_590aee7bdd69b59b.customDestinations-ms (sha256=13a3e408ead4...)",
+      "Collected & hash-verified -> GH25225_5d696d521de238c3.customDestinations-ms (sha256=61009ae86c70...)",
+      "Collected & hash-verified -> GH25225_7e4dca80246863e3.customDestinations-ms (sha256=74d6d8c58d0b...)",
+      "Collected & hash-verified -> GH25225_8e4e81d9adc545b8.customDestinations-ms (sha256=74d6d8c58d0b...)",
+      "Collected & hash-verified -> GH25225_9a165f62edbfa161.customDestinations-ms (sha256=e78e2626a2a4...)",
+      "Collected & hash-verified -> GH25225_a7ba40025dac9a67.customDestinations-ms (sha256=750ce77f5956...)",
+      "Collected & hash-verified -> GH25225_ccba5a5986c77e43.customDestinations-ms (sha256=01e24605267d...)",
+      "Collected & hash-verified -> GH25225_d93f411851d7c929.customDestinations-ms (sha256=498cc0b0cb22...)",
+      "Collected & hash-verified -> GH25225_f01b4d95cf55d32a.customDestinations-ms (sha256=7116ff028244...)",
+      "Collected & hash-verified -> GH25225_f18460fded109990.customDestinations-ms (sha256=90bf6baa6f96...)",
+      "Collected & hash-verified -> GH25225_ConsoleHost_history.txt (sha256=203d2e568ed1...)",
+      "Collected & hash-verified -> dbagent.py (sha256=7bd1762b54bf...)",
+      "Collected & hash-verified -> mcpagent.py (sha256=45a6baf282a6...)",
+      "Collected & hash-verified -> py (sha256=4f4a0b88ac5a...)",
+      "Collected & hash-verified -> testagent.py (sha256=f9db419cc81f...)",
+      "Collected directory -> GH25225_ai agents (4 files verified)",
+      "Collected & hash-verified -> AbnormalApp.zip (sha256=bc7c170c58ec...)",
+      "Collected & hash-verified -> abnormal_app.apk (sha256=584275555619...)",
+      "Collected & hash-verified -> AdbTraining.zip (sha256=b1f4f06fd63b...)",
+      "Collected & hash-verified -> ADB_Drill.html (sha256=8d74bc1d11fa...)",
+      "Collected & hash-verified -> ADB_Solution.html (sha256=e5f97bfd9d14...)",
+      "Collected & hash-verified -> Android Application.pptx (sha256=972b722b051d...)",
+      "Collected & hash-verified -> Android Debug Bridge.pptx (sha256=4b7d892c9710...)",
+      "Collected & hash-verified -> Android OS Overview.pptx (sha256=0df1b3992720...)",
+      "Collected & hash-verified -> Android Studio.pptx (sha256=f4fdcfd15755...)",
+      "Collected & hash-verified -> Android Vulnerabilities.pptx (sha256=c5a363e37289...)",
+      "Collected & hash-verified -> app-debug-target-25.apk (sha256=63c35d3a0aec...)",
+      "Collected & hash-verified -> app-debug.apk (sha256=c0dea93ae70e...)",
+      "Collected & hash-verified -> app-location.apk (sha256=97d9c187320d...)",
+      "Collected & hash-verified -> app-outdated.apk (sha256=231a12ea3c21...)",
+      "Collected & hash-verified -> app-storage.apk (sha256=1e24fde248db...)",
+      "Collected & hash-verified -> app_release_no_proguard.apk (sha256=aeed16c71279...)",
+      "Collected & hash-verified -> app_release_proguard.apk (sha256=3fa66bc062a0...)",
+      "Collected & hash-verified -> DeepLinkApp.zip (sha256=37ec2004b827...)",
+      "Collected & hash-verified -> DeepLink_Drill.html (sha256=12950f355399...)",
+      "Collected & hash-verified -> DeepLink_Solution.html (sha256=93961b476474...)",
+      "Collected & hash-verified -> deep_link_app.apk (sha256=0646d2ae3f5c...)",
+      "Collected & hash-verified -> Developer_Signature_Drill.html (sha256=11d9700747cd...)",
+      "Collected & hash-verified -> DynamicCodeLoader.zip (sha256=a8b4c821dbb6...)",
+      "Collected & hash-verified -> dynamic_code_loader.apk (sha256=d6dea0f4eb1f...)",
+      "Collected & hash-verified -> Dynamic_Code_Loading_Drill.html (sha256=3cb33bd0b24f...)",
+      "Collected & hash-verified -> Dynamic_Code_Loading_Solution.html (sha256=c4cc2914c42f...)",
+      "Collected & hash-verified -> find_apps_by_signature.sh (sha256=78342b9a5259...)",
+      "Collected & hash-verified -> GetPackages.ps1 (sha256=48674bf56827...)",
+      "Collected & hash-verified -> HardCodedNativeApp.zip (sha256=9ab43ee05e89...)",
+      "Collected & hash-verified -> hard_coded_app.apk (sha256=c89c7c469e8c...)",
+      "Collected & hash-verified -> Hard_Coded_Native_Drill.html (sha256=fc56dc91bfa4...)",
+      "Collected & hash-verified -> Hard_Coded_Native_Solution.html (sha256=ef39b8493bf4...)",
+      "Collected & hash-verified -> Hidden Recognition App.pptx (sha256=e0d18301efd0...)",
+      "Collected & hash-verified -> Hidden_Recognition_Drill.html (sha256=c74bbf95a300...)",
+      "Collected & hash-verified -> Hidden_Recognition_Solution.html (sha256=895c7962504b...)",
+      "Collected & hash-verified -> index.html (sha256=9cb329c7c8da...)",
+      "Collected & hash-verified -> LocationUpdates.zip (sha256=a8bd85d70a19...)",
+      "Collected & hash-verified -> Location_Drill.html (sha256=c5511c428065...)",
+      "Collected & hash-verified -> Location_Solution.html (sha256=c593ccef947f...)"
+    ],
+    "Warnings_Skipped": [
+      "[Registry] No matches found for pattern: Windows\\System32\\config\\SYSTEM",
+      "[Registry] No matches found for pattern: Windows\\System32\\config\\SOFTWARE",
+      "[Registry] No matches found for pattern: Windows\\System32\\config\\SAM",
+      "[Registry] No matches found for pattern: Windows\\System32\\config\\SECURITY",
+      "[Prefetch] No matches found for pattern: Windows\\Prefetch\\*.pf",
+      "[Amcache] No matches found for pattern: Windows\\AppCompat\\Programs\\Amcache.hve",
+      "[RecycleBin] No matches found for pattern: $Recycle.Bin\\*\\$I*",
+      "[RecycleBin] No matches found for pattern: $Recycle.Bin\\*\\$R*",
+      "[SRUM] No matches found for pattern: Windows\\System32\\sru\\SRUDB.dat",
+      "[SRUM] No matches found for pattern: Windows\\System32\\sru\\*.log"
+    ],
+    "Errors": [
+      "Hash verification FAILED for C:\\Users\\All Users\\NTUSER.DAT -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\All Users_NTUSER.DAT | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\All Users\\\\NTUSER.DAT'",
+      "Hash verification FAILED for C:\\Users\\GH25225\\NTUSER.DAT -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\GH25225_NTUSER.DAT | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\GH25225\\\\NTUSER.DAT'",
+      "Hash verification FAILED for C:\\Users\\TEMP\\NTUSER.DAT -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\TEMP_NTUSER.DAT | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\TEMP\\\\NTUSER.DAT'",
+      "Hash verification FAILED for C:\\Users\\GH25225\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Registry\\raw\\GH25225_UsrClass.dat | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Users\\\\GH25225\\\\AppData\\\\Local\\\\Microsoft\\\\Windows\\\\UsrClass.dat'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\System.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\System.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\System.evtx'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\Security.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Security.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Security.evtx'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\Application.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Application.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Application.evtx'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-Sysmon%4Operational.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-Sysmon%4Operational.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-Sysmon%4Operational.evtx'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-PowerShell%4Operational.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-PowerShell%4Operational.evtx'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TaskScheduler%4Operational.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-TaskScheduler%4Operational.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-TaskScheduler%4Operational.evtx'",
+      "Hash verification FAILED for C:\\Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx -> C:\\Users\\GH25225\\Downloads\\files (4)\\investigation_staging_20260721_091608\\Logs\\raw\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx | Failed to hash source before copy: [Errno 13] Permission denied: 'C:\\\\Windows\\\\System32\\\\winevt\\\\Logs\\\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx'",
+      "Execution manually aborted by user (KeyboardInterrupt)."
+    ]
+  }
+}

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hard-Coded Native App Drill — Day 4 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+details { margin:10px 0; padding:8px 14px; background:var(--hint-bg); border-left:3px solid var(--hint-border); border-radius:3px; }
+details > summary { cursor:pointer; font-weight:600; color:var(--hint-border); }
+details[open] > summary { margin-bottom:8px; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.exercise { background:var(--accent-soft); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--accent); }
+.exercise h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Hard-Coded Native App — Find every secret in the APK</h1>
+<p class="lede">An app hides four secrets across two layers &mdash; two in Kotlin constants (<code>MainActivity.kt</code>), two in the native library (<code>.so</code>). Each one uses a different encoding or encryption shape. <strong>Your job is to identify the shape of each one from clues in the data, then decrypt it with CyberChef.</strong> The reference table in &sect;2 lists the shapes you might see; it's on you to recognise which is which. Use JADX for the Kotlin layer, Ghidra for the <code>.so</code> layer. Slides 16&ndash;26 of <em>Android Vulnerabilities.pptx</em>.</p>
+
+<h2>What you'll learn</h2>
+<ul>
+  <li>Why hard-coded secrets in mobile apps are a fool's errand — the binary ships to the attacker's hands.</li>
+  <li>How to triage a Kotlin/Java code base in JADX: search by string, by symbol, by constant.</li>
+  <li>How to recognise four common encoding/encryption shapes by sight: Base64, ROT13, hex, and stream-cipher byte arrays.</li>
+  <li>How to read native code in Ghidra well enough to spot hardcoded keys and recognise an RC4-style key schedule.</li>
+  <li>How CyberChef chains operations into recipes that decrypt all four examples without writing a line of code.</li>
+</ul>
+
+<h2>1. Background — why "hard-coded" is irreversible (slide 16)</h2>
+
+<p>Once a secret ships inside an APK, the secret has been sent to every user. The user owns the APK file; nothing prevents them from copying it elsewhere, decompiling it, and extracting whatever you put inside. <em>Encryption</em> doesn't help by itself, because the decryption key has to ship too — and if it ships, an attacker can find it.</p>
+
+<p>This means hard-coded secrets are <em>obfuscation</em> at best, never security. The right model: assume an attacker with a copy of your APK and a few hours can extract any constant you put in it. Mitigations like ProGuard/R8 (Day 4 slides 27–30) raise the cost of finding it, but never make it impossible.</p>
+
+<p>This drill walks you through finding each of four secrets the lab APK hides, in increasing order of difficulty.</p>
+
+<h2>2. The four encoding/encryption shapes you'll see (slide 17)</h2>
+
+<table>
+<tr><th>Shape</th><th>How to recognise it by eye</th><th>Reverse it with</th></tr>
+<tr><td><strong>Base64</strong> <em>(encoding, not encryption)</em></td><td>String of letters, digits, <code>+</code>, <code>/</code>, ending in <code>=</code> or <code>==</code>. Length divisible by 4. Every 3 input bytes become 4 output characters from the 64-char alphabet (A–Z, a–z, 0–9, +, /). Example: <code>QVBJS0VZOm15c2VjcmV0MTIz</code> decodes to <code>APIKEY:mysecret123</code>.</td><td>CyberChef "From Base64"</td></tr>
+<tr><td><strong>XOR</strong></td><td>Comments or variable names mentioning XOR; key string visible nearby. Usually combined with Base64 because raw XOR output isn't ASCII. The key is repeated cyclically — if the key is 6 bytes and the plaintext is 60, byte 7 is XOR'd with key[0] again.</td><td>CyberChef "XOR" with the key (set Key Type to UTF8)</td></tr>
+<tr><td><strong>ROT13</strong></td><td>String that <em>looks</em> like English but every letter is shifted by 13 (A→N, B→O, …). Non-letters unchanged. Example: <code>Gur gehgu vf bhg gurer</code> → <code>The truth is out there</code>. Self-inverse — running ROT13 twice returns the original.</td><td>CyberChef "ROT13"</td></tr>
+<tr><td><strong>Hex</strong></td><td>Long string of <code>0-9a-f</code>, even length. Each byte → two hex characters. Example: <code>ABC</code> → <code>414243</code>. In native disassembly, byte arrays are stored in <em>reverse byte order</em> on little-endian platforms — the array <code>0xb7,0x04,0xe6,0x8b</code> appears as the constant <code>0x8be604b7</code> in Ghidra. Read carefully.</td><td>CyberChef "From Hex"</td></tr>
+<tr><td><strong>RC4</strong> <em>(stream cipher)</em></td><td>Byte arrays <code>0xab, 0xcd, …</code>; modulo-256 ops (<code>AND 0xFF</code> in assembly); a key string nearby. RC4 generates a pseudo-random keystream from the secret key and XORs it byte-by-byte with the plaintext. Used historically in TLS and WEP — now deprecated in TLS by RFC 7465. If you see modular-256 indexing in a function that XORs each byte, it's almost certainly RC4 or close cousin.</td><td>CyberChef "RC4" with the key</td></tr>
+</table>
+
+<p><strong>Combinations.</strong> Base64 and hex are encodings, not encryption — alone they only stop casual reading. Real apps usually combine them with XOR or RC4: encrypt first, then encode the binary output to ASCII so it can sit safely in a Kotlin string. Decoder applies the operations in reverse order: From Base64 → XOR (or RC4 → From Hex if hex was the outer wrapper).</p>
+
+<h2>3. Why developers hide secrets in <code>.so</code> files (slide 19)</h2>
+
+<p>Two of the four secrets in this APK are in the Kotlin layer; two are in the native library at <code>lib/&lt;abi&gt;/libhardcodednativeapp.so</code>. The native library is where developers <em>think</em> they're winning, because:</p>
+<ul>
+  <li>The DEX layer is just a single archive that any standard tool (JADX, ApkTool, Bytecode Viewer) reverses to readable Java/Kotlin in seconds. Constants jump out of the source.</li>
+  <li>A <code>.so</code> is platform-specific machine code — ARM64, ARMv7, x86, x86_64. There's no "decompile to Kotlin" step. Tools have to lift it back to pseudo-C, and the result looks nothing like the original. That gap raises the work the attacker has to do.</li>
+</ul>
+
+<p>That said, "raises the work" is the entire defence — it doesn't break. Strings are still strings inside the binary. The Ghidra <strong>Defined Strings</strong> window dumps every constant the binary contains. Hardcoded keys, hardcoded URLs, hardcoded API tokens — all visible without lifting a single instruction. The native layer is a speed bump for opportunistic attackers, not a wall for motivated ones.</p>
+
+<p><strong>Workflow:</strong> JADX first (fast, surfaces three things at once: the Kotlin constants, the JNI <code>external fun</code> declarations, and the <code>System.loadLibrary("native-lib")</code> call). Then Ghidra on the <code>.so</code> for the remaining secrets, navigating from the JNI export names you collected.</p>
+
+<div class="warn">
+  <strong>Setup before you start.</strong>
+  <ol>
+    <li><strong>JADX-GUI</strong> is pre-installed by the college on each lab PC. Open it from the <strong>Start menu</strong> (search "jadx") or, if no shortcut is there, from its install folder — typically <code>C:\Program Files\jadx\bin\jadx-gui.bat</code> or wherever IT placed it. You don't install anything yourself.</li>
+    <li><strong>Ghidra</strong> is pre-installed by the college. Launch it from the <strong>Start menu</strong> (search "ghidra") or run <code>ghidraRun.bat</code> from its install folder.</li>
+    <li>Open <a href="https://gchq.github.io/CyberChef/" target="_blank">CyberChef</a> in your browser — no install needed.</li>
+    <li>Have the lab APK ready: <code>hard_coded_app.apk</code> from the course folder.</li>
+  </ol>
+</div>
+
+<div class="exercise">
+  <h3>Exercise — Decrypt all four secrets</h3>
+
+  <p>The APK hides exactly four secrets. Your job: find each one, <strong>identify the shape it's wrapped in</strong> (encoding, cipher, or combination), and decrypt it. You'll know you got it right when the plaintext is human-readable. The reference table in &sect;2 names the shapes you might encounter &mdash; it's on you to recognise which is which by the visual fingerprint of the data and (for the native ones) the routine surrounding it.</p>
+
+  <ol>
+    <li><strong>Secret #1</strong>: a Kotlin constant in <code>MainActivity.kt</code> &mdash; look inside a <code>companion object</code> block. The string's alphabet is restricted, comes in fixed-length blocks, and has recognisable padding. Once you decode that outer shape, the bytes are still garbled &mdash; there's a second transformation layered on top, and the key for it is in the same file.</li>
+    <li><strong>Secret #2</strong>: a string constant inside the native library. Looks like English at a glance, but every word is gibberish &mdash; same letters, different positions.</li>
+    <li><strong>Secret #3</strong>: another native string constant. Long, even-length, alphabet limited to <code>0-9a-f</code>.</li>
+    <li><strong>Secret #4</strong>: a byte array constant in the native library plus the routine that decrypts it. To finish this one you have to read the routine in Ghidra and recognise the cipher it implements &mdash; the key is a separate string in the data segment nearby. <strong>What to scan the routine for:</strong> a fixed-size working buffer that's filled in <em>before</em> any input is touched, then used to transform the input one byte at a time. The buffer's size is the giveaway &mdash; only one classic stream cipher family uses a buffer of that exact size. Once you can name the cipher, CyberChef has it as a single operation.</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 &mdash; Where to look in JADX for Secret #1</summary>
+    <p>Drag <code>hard_coded_app.apk</code> onto JADX-GUI. Wait for the decompilation. Navigate to <code>com.example.hardcodednativeapp</code> in the left pane. Open <code>MainActivity</code>. Either:</p>
+    <ul>
+      <li>Use Ctrl-F (Cmd-F on macOS) and search for <code>ENCRYPTED_STRING_1</code>, or</li>
+      <li>Just scroll to the top of the class — Kotlin <code>companion object</code> blocks live right after the class declaration.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Hint — JADX search recipe for any APK (slide 18)</summary>
+    <p>When you don't know the constant name, the slide-18 recipe gives you a list of patterns to grep for. <strong>Right-click the package</strong> in JADX's left pane and choose <em>Search</em> to scope queries to your app's code (instead of the whole project, which includes Kotlin/AndroidX libraries and produces too much noise). Then search for these terms in order, focusing on <code>MainActivity.kt</code> and any class involved in network communication:</p>
+    <table>
+      <tr><th>Pattern</th><th>What it usually finds</th></tr>
+      <tr><td><code>Base64.encodeToString</code> / <code>Base64.decode</code> / <code>Base64.getEncoder</code> / <code>Base64.getDecoder</code></td><td>Where the app encodes or decodes secrets</td></tr>
+      <tr><td><code>const val</code>, <code>public static final</code>, <code>companion object</code></td><td>Compile-time constants — usually the home of hardcoded strings</td></tr>
+      <tr><td>Names like <code>API</code>, <code>KEY</code>, <code>TOKEN</code>, <code>SECRET</code>, <code>PASSWORD</code> — and obfuscated counterparts <code>STR1</code>, <code>DATA1</code>, <code>X</code>, <code>Y</code></td><td>The constants themselves, even when developers tried to hide them with bland names</td></tr>
+      <tr><td><code>javax.crypto</code> usage (Cipher, SecretKeySpec, IvParameterSpec)</td><td>Anything using AES/DES/RC4 from the JVM crypto API</td></tr>
+      <tr><td><code>external fun</code> declarations + <code>System.loadLibrary</code></td><td>JNI bridges — these point at native code you'll need to open in Ghidra</td></tr>
+      <tr><td><code>String =</code> assignments inside companion objects</td><td>Plain string literals that might be encoded secrets</td></tr>
+    </table>
+    <p>Common visual patterns to spot once you're in the source: split URLs (an attacker usually splits <code>"https://api.example.com/" + "secret-endpoint"</code> across multiple constants to dodge naive grep), Base64-shaped strings ending in <code>=</code>, long even-length hex strings, and any byte array with cryptic comments.</p>
+  </details>
+
+  <details>
+    <summary>Hint 2 &mdash; Full CyberChef recipe for Secret #1 (open only if stuck)</summary>
+    <p>Slide 23 gives the recipe and the captured input verbatim:</p>
+    <pre><code>Input:    CCZuCSI3I2kdIS43Iz09
+Recipe:   From Base64 → XOR with key "FINDME" (UTF-8)
+Output:   No More Secrets</code></pre>
+    <p>The order matters: <em>From Base64 first, then XOR</em>. Reversed, you'd be XOR'ing the still-encoded characters and getting garbage. Why this order? Because the <em>encoder</em> XOR'd plaintext first, then Base64-encoded the XOR output to make it ASCII-safe. Decoder undoes them in reverse.</p>
+  </details>
+
+  <details>
+    <summary>Hint 3 &mdash; Extracting native strings with Ghidra (for Secrets #2 and #3)</summary>
+    <p>The native library is at <code>lib/arm64-v8a/libhardcodednativeapp.so</code> inside the APK (also <code>x86_64</code>, <code>armeabi-v7a</code>, <code>x86</code>). Two ways to extract it:</p>
+    <ul>
+      <li><strong>Easy:</strong> right-click the APK → "Open with archive manager" (or use any unzip tool — APKs are ZIP files). Pull out the <code>lib/arm64-v8a/libhardcodednativeapp.so</code>.</li>
+      <li><strong>Tool:</strong> use <code>apktool d hard_coded_app.apk -o unpackapk</code> (slide 18 notes). The <code>.so</code>s end up in <code>unpackapk/lib/</code>.</li>
+    </ul>
+    <p>Then in Ghidra: File → New Project → Import the <code>.so</code> → "Yes" to analyze. Open Window → "Defined Strings" (slide 20) for a list of every string constant in the binary. Scroll for a string that looks like ROT13 (mangled English) or for a long hex string.</p>
+  </details>
+
+  <details>
+    <summary>Hint 4 &mdash; Full CyberChef recipe for Secret #2 (open only if stuck)</summary>
+    <p>Slide 24:</p>
+    <pre><code>Input:    Gur gehgu vf bhg gurer
+Recipe:   ROT13
+Output:   The truth is out there</code></pre>
+    <p>ROT13 is its own inverse — the same recipe encrypts and decrypts. Spot-check: any letter shifted by 13 ends up at a position that, shifted by another 13, returns to the original (26 letters total).</p>
+  </details>
+
+  <details>
+    <summary>Hint 5 &mdash; Full CyberChef recipe for Secret #3 (open only if stuck)</summary>
+    <p>Slide 25:</p>
+    <pre><code>Input:    4150496b65793a533363726574504073737730726421
+Recipe:   From Hex
+Output:   APIkey:S3cretP@ssw0rd!</code></pre>
+    <p>The output is a literal API-key-and-password concatenation, separated by <code>:</code>. Note the hex string was found <em>as-is</em> in the .so's string table; no further decoding needed.</p>
+  </details>
+
+  <details>
+    <summary>Hint 6 &mdash; Recognising the cipher in Ghidra: structural fingerprints (no spoiler)</summary>
+    <p>The decryption routine for Secret #4 has three structural fingerprints. Each is suggestive on its own; all three together point at one specific classic stream cipher:</p>
+    <ul>
+      <li><strong>A 256-byte working buffer</strong> initialised in a tight loop <em>before</em> any input byte is touched. Often filled with values 0&ndash;255, then permuted using the key. This is the cipher's "state array" / S-box.</li>
+      <li><strong>Indices wrapped at byte boundaries</strong>: look for <code>and 0xFF</code> / <code>and 0xff, &lt;reg&gt;</code> in the assembly, or <code>i = (i + 1) &amp; 0xFF</code> in the pseudo-C. The cipher uses two indices, both wrapped mod 256.</li>
+      <li><strong>The key is a short ASCII string</strong> in the data segment, read byte-by-byte during the state-array setup. Find it by scrolling Ghidra's <strong>Defined Strings</strong> window for a short word that looks like a password (lowercase, mnemonic, ~10&ndash;15 chars).</li>
+    </ul>
+    <p>Once you have all three signals, search the web for "256-byte S-box stream cipher" or "stream cipher with 256-entry state" &mdash; the algorithm name is the top result. With the name, CyberChef has it as a single operation. The next hint gives the full recipe and key.</p>
+    <p>One last gotcha when copying the byte array out: native code stores byte arrays in <strong>reverse byte order</strong> on little-endian platforms (slide 17). The array <code>0xb7, 0x04, 0xe6, 0x8b</code> appears in Ghidra as the 32-bit constant <code>0x8be604b7</code>. Mentally reverse the bytes when copying them out for CyberChef.</p>
+  </details>
+
+  <details>
+    <summary>Hint 7 &mdash; Full CyberChef recipe for Secret #4, with exact knob settings (open only if completely stuck)</summary>
+    <pre><code>Input:    0xb7,0x04,0xe6,0x8b,0x11,0xa8,0xdc,0x28,0x7f,0xc0,0xd4,0x79,0x4b,0x10,0xa8,0x27</code></pre>
+    <p>Recipe &mdash; two operations chained:</p>
+    <ol>
+      <li><strong>From Hex</strong> &mdash; <em>Delimiter:</em> <code>Auto</code></li>
+      <li><strong>RC4</strong> &mdash; <em>Passphrase:</em> <code>hacktheplanet</code> with encoding <code>UTF8</code>; <em>Input format:</em> <code>Latin1</code>; <em>Output format:</em> <code>Latin1</code></li>
+    </ol>
+    <pre><code>Output:   No Where to Hide</code></pre>
+    <p><strong>The format knobs matter.</strong> CyberChef's RC4 defaults to <code>UTF8</code> for input/output format, which corrupts non-ASCII bytes during the intermediate XOR step and gives garbage. Switching <em>both</em> Input format and Output format to <code>Latin1</code> treats every byte as a raw byte 0&ndash;255 and lets the cipher work correctly. (The passphrase encoding stays <code>UTF8</code> because the key is plain ASCII.) Slide 26 prints the output as "No Where To Hide" with a capital T &mdash; the actual CyberChef output is lowercase "to". The slide has a typo.</p>
+  </details>
+
+  <details>
+    <summary>Hint 8 &mdash; Pinning the JNI exports in Ghidra (slide 20)</summary>
+    <p>For each native function the Kotlin code calls via <code>external fun</code>, the .so exports a symbol prefixed with <code>Java_</code>. Use Symbol Tree → Functions → search for <code>Java_</code> to list them all. Each one corresponds to one Kotlin <code>external fun</code> declaration; finding which Java function calls each one in JADX gives you the call-graph anchor between the two layers.</p>
+  </details>
+</div>
+
+<h2>Reflection</h2>
+<ol>
+  <li>Each of the four secrets used a different mechanism. From an attacker's "I want to hide a secret" perspective, rank them from <em>least</em> to <em>most</em> effective and justify the order. (Hint: the answer involves how visible the encoded form is in a strings dump.)</li>
+  <li>Native libraries (<code>.so</code>) are recommended in the deck as a better hiding place than DEX. List two reasons that's true and one reason it's not as much help as it sounds.</li>
+  <li>If you had to actually ship a secret in an Android app — say, an API key for a paid third-party service — what's the minimum-effort architecture that doesn't depend on hiding the secret in the binary?</li>
+</ol>
+
+<footer>
+  <p>Solutions and worked outputs: <a href="Hard_Coded_Native_Solution.html">Hard_Coded_Native_Solution.html</a></p>
+  <p class="meta">Course: Android Security · Day 4 · Hard-coded native app (Android Vulnerabilities slides 16–26). All inputs and recipes taken verbatim from the slide deck.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

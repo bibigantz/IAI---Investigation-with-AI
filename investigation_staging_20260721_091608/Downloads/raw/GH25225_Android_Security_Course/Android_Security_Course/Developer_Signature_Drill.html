@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Developer Signature Drill — Day 2 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+h4 { font-size:16px; margin-top:18px; }
+.lede { color:var(--muted); margin-top:0; }
+nav.toc { background:#fff; border:1px solid var(--rule); border-radius:6px; padding:12px 18px; margin:0 0 24px; }
+nav.toc ol { margin:0; padding-left:20px; }
+nav.toc li { margin:3px 0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+.note { background:var(--hint-bg); border-left:3px solid var(--hint-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+details { margin:10px 0; padding:8px 14px; background:var(--hint-bg); border-left:3px solid var(--hint-border); border-radius:3px; }
+details > summary { cursor:pointer; font-weight:600; color:var(--hint-border); }
+details[open] > summary { margin-bottom:8px; }
+.meta { color:var(--muted); font-size:0.92em; }
+table { border-collapse:collapse; margin:12px 0; width:100%; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Developer Signature Drill — Student Guide</h1>
+<p class="lede">In this drill you will list every app installed on your Android phone and group them by the developer who signed them. By the end you will be able to:</p>
+
+<ul>
+  <li>Read an APK's signing certificate yourself</li>
+  <li>Recognise apps signed with the <strong>default Android debug keystore</strong> (every Android Studio install on Earth shares it)</li>
+  <li>Recognise apps that share a single corporate certificate (e.g. Google Mobile Services, Samsung core apps)</li>
+  <li>Recognise apps that have <strong>rotated</strong> their signing key (v3 signing scheme)</li>
+  <li>Use a SHA‑256 fingerprint to confirm two APKs come from the same developer</li>
+</ul>
+
+<p>We use a Galaxy A51 connected over USB.</p>
+
+<nav class="toc">
+  <h4 style="margin:0 0 8px;">Contents</h4>
+  <ol>
+    <li><a href="#install">What you need installed</a></li>
+    <li><a href="#tools">Tools used by the scripts</a></li>
+    <li><a href="#what-is-a-signature">What is a developer signature, really?</a></li>
+    <li><a href="#sha256">What is SHA-256 and why this drill checks it</a></li>
+    <li><a href="#drill">The drill — what to find</a></li>
+    <li><a href="#run">How to run the scripts</a></li>
+    <li><a href="#important">Important parts of the scripts (read this if it doesn't work)</a></li>
+    <li><a href="#problems">Common problems</a></li>
+    <li><a href="#selfcheck">Self-check tasks</a></li>
+  </ol>
+</nav>
+
+<!-- ============================== 1 ============================== -->
+<h2 id="install">1. What you need installed</h2>
+
+<h3>One-time setup</h3>
+<table>
+  <tr><th>Tool</th><th>Why we need it</th><th>How to install</th></tr>
+  <tr><td><strong>Android Studio</strong></td><td>Bundles <code>adb</code>, <code>apksigner</code>, <code>aapt2</code> and the build-tools</td><td><a href="https://developer.android.com/studio" target="_blank">developer.android.com/studio</a></td></tr>
+  <tr><td><strong>Java JDK 11+</strong></td><td>Provides <code>keytool</code> (used as a fallback)</td><td>Comes with recent Android Studio. Otherwise install from <a href="https://adoptium.net" target="_blank">adoptium.net</a></td></tr>
+  <tr><td><strong>Galaxy A51</strong></td><td>The target device for the drill</td><td>–</td></tr>
+  <tr><td><strong>USB cable</strong></td><td>Must support data, not charging only</td><td>–</td></tr>
+  <tr><td><strong>Windows only — Samsung USB driver</strong></td><td>Lets <code>adb</code> see the phone</td><td><a href="https://developer.samsung.com/android-usb-driver" target="_blank">developer.samsung.com/android-usb-driver</a></td></tr>
+</table>
+
+<h3>Two PATH entries you must have</h3>
+<p>After installing Android Studio, add these two folders to your <code>PATH</code>:</p>
+<ul>
+  <li><code>&lt;SDK&gt;/platform-tools</code> — gives you <code>adb</code></li>
+  <li><code>&lt;SDK&gt;/build-tools/&lt;latest version&gt;</code> — gives you <code>apksigner</code></li>
+</ul>
+<p><code>&lt;SDK&gt;</code> is typically:</p>
+<ul>
+  <li>macOS: <code>~/Library/Android/sdk</code></li>
+  <li>Linux: <code>~/Android/Sdk</code></li>
+  <li>Windows: <code>%LOCALAPPDATA%\Android\sdk</code></li>
+</ul>
+<p>Verify with:</p>
+<pre><code>adb --version
+apksigner --version
+keytool -help | head -1</code></pre>
+
+<h3>On the phone</h3>
+<ol>
+  <li>Settings → About phone → <strong>tap "Build number" 7 times</strong> to unlock Developer options.</li>
+  <li>Settings → Developer options → <strong>USB debugging = on</strong>.</li>
+  <li>Plug into your computer.</li>
+  <li>On the phone, the dialog <strong>"Allow USB debugging?"</strong> appears — tap <strong>Allow</strong> and tick <strong>"Always allow from this computer"</strong>.</li>
+  <li>On your computer, run <code>adb devices</code>. You should see your phone with state <code>device</code> (not <code>unauthorized</code>).</li>
+</ol>
+
+<!-- ============================== 2 ============================== -->
+<h2 id="tools">2. Tools used by the scripts</h2>
+<p>The scripts are thin orchestrators around standard SDK tools.</p>
+<table>
+  <tr><th>Tool</th><th>Where it runs</th><th>Used for</th></tr>
+  <tr><td><code>adb shell pm list packages [-3]</code></td><td>computer → phone</td><td>List every installed package; <code>-3</code> filters to user-installed only</td></tr>
+  <tr><td><code>adb shell pm path &lt;pkg&gt;</code></td><td>computer → phone</td><td>Find the on-device path to the APK file</td></tr>
+  <tr><td><code>adb pull &lt;remote&gt; &lt;local&gt;</code></td><td>computer ← phone</td><td>Copy the APK back to the workstation</td></tr>
+  <tr><td><code>apksigner verify --print-certs --min-sdk-version 28</code></td><td>computer</td><td><strong>Primary signature reader.</strong> Handles APK Signature Schemes v1/v2/v3/v4</td></tr>
+  <tr><td><code>keytool -printcert -jarfile</code></td><td>computer</td><td><strong>Fallback</strong> if <code>apksigner</code> is unavailable. Reads only <strong>v1</strong> (JAR) signatures, so it cannot read most modern Play Store apps</td></tr>
+  <tr><td><code>awk</code> / <code>grep</code> (mac/linux) or <code>Select-String</code> (Windows PS)</td><td>computer</td><td>Extract the SHA-256 line from the tool's text output</td></tr>
+</table>
+
+<div class="warn" style="margin-top:14px;">
+  <strong>Why pull each APK to the PC instead of reading it on the phone?</strong> <code>apksigner</code> is a PC-side tool (it lives in <code>…\Android\Sdk\build-tools\&lt;ver&gt;\apksigner.bat</code>) and takes a local file path as its argument — it has no way to reach over <code>adb</code> and read <code>/data/app/~~xxx==/com.example.foo-yyy==/base.apk</code> directly. So the APK bytes have to live on the PC's filesystem before the tool can hash them. The scripts pull each <code>base.apk</code> into a unique temp folder (Windows: <code>%TEMP%\apksig_&lt;guid&gt;\</code>, mac/Linux: <code>/tmp/apksig.XXXXXX</code>), run <code>apksigner</code> on it, and delete the whole folder when done — so the dump doesn't pollute your course folder and doesn't get picked up by the next zip rebuild.
+</div>
+
+<!-- ============================== 3 ============================== -->
+<h2 id="what-is-a-signature">3. What is a developer signature, really?</h2>
+<p>Every APK you install on Android — whether from Play Store, sideloaded from a <code>.apk</code> file, or built by you in Android Studio — has been <strong>signed</strong> by its developer. Without a valid signature, Android refuses to install it.</p>
+
+<h3>How signing works (one paragraph)</h3>
+<ol>
+  <li>The developer creates a <strong>keypair</strong>: a private key (kept secret) and a public certificate (shareable).</li>
+  <li>When the build system finishes producing the APK, it computes a hash over the APK contents and <strong>encrypts that hash with the private key</strong> — that's the signature.</li>
+  <li>The certificate (containing the matching public key) is bundled inside the APK.</li>
+  <li>When the phone installs the APK, it decrypts the signature with the public key from the cert and compares it to a freshly computed hash of the APK. If they match → the APK has not been tampered with <strong>and</strong> it was signed by whoever holds the private key.</li>
+</ol>
+
+<h3>Why this matters for security</h3>
+<ul>
+  <li><strong>Same developer guarantee</strong>: app updates must be signed with the same key as the original install. So an attacker who repackages WhatsApp cannot push it to your phone as an "update" — Android refuses it.</li>
+  <li><strong>Trust grouping</strong>: two apps signed with the same key are considered "the same developer" by Android. They can declare a <code>signature</code>-level permission to talk only to each other, or a <code>sharedUserId</code> to share storage.</li>
+  <li><strong>Identity audit</strong>: you can pick any APK off any phone and ask "who signed this?" without trusting the developer's claim — the math doesn't lie.</li>
+</ul>
+
+<h3>The four signing schemes — v1, v2, v3, v4</h3>
+<p>Android has revised its signing format four times. Most modern APKs are signed with two or three of these <em>at the same time</em> for backward compatibility. Each scheme exists to fix a security or operational shortcoming of the previous one.</p>
+
+<table>
+  <tr><th>Scheme</th><th>Since</th><th>What it adds</th><th>Why it matters</th></tr>
+  <tr><td><strong>v1 (JAR signing)</strong></td><td>Android 1.0</td><td>Hashes each individual file inside the APK; signature lives in <code>META-INF/</code>. Inherited from Java JAR signing.</td><td>Has known flaws — files <strong>outside</strong> <code>META-INF/MANIFEST.MF</code> are not signed, which lets attackers inject content (the <strong>Janus</strong> vulnerability, CVE‑2017‑13156, exploited exactly this in 2017).</td></tr>
+  <tr><td><strong>v2 (APK Signature Scheme v2)</strong></td><td>Android 7.0</td><td>Signs the <strong>entire APK file as a stream</strong>, not file-by-file. Signature is stored in a dedicated "APK Signing Block".</td><td>Closes Janus-class injection holes — every byte of the APK is covered. Also faster to verify (one hash, not one per file).</td></tr>
+  <tr><td><strong>v3</strong></td><td>Android 9.0</td><td>Everything v2 does + supports <strong>key rotation</strong>: the new signing key is embedded in the APK and signed by the old one.</td><td>Lets a developer rotate to a new private key (e.g. after a leak) without losing the trust chain. WhatsApp, Google Photos, and Google Videos in our drill all use this.</td></tr>
+  <tr><td><strong>v4</strong></td><td>Android 11.0</td><td>A sidecar <code>.idsig</code> file containing a <strong>Merkle hash tree</strong> of the APK, enabling streaming verification.</td><td>Used by <code>adb install --incremental</code> for huge game APKs — the OS can verify each chunk as it downloads, without buffering the full APK first.</td></tr>
+</table>
+
+<p><strong>Why this matters for the drill</strong>: an app signed with only v2 / v3 (i.e. most Play Store apps today) is <strong>invisible to <code>keytool</code></strong>, because <code>keytool</code> was written for v1 JAR signing only. That's why the previous version of this script returned nothing for modern apps. <code>apksigner</code> reads all four schemes and is therefore the right tool.</p>
+
+<h3>What's <em>inside</em> a certificate?</h3>
+<p>When you run <code>apksigner verify --print-certs base.apk</code> you get fields like this:</p>
+
+<pre><code>Signer #1 certificate DN: CN=Eran Katsav, OU=Puzzle Appliactions, L=Kfar Varburg, ST=Israel, C=IL
+Signer #1 certificate SHA-256 digest: 493028204afeae020d359264c5ec97680b13cff8ac52d286ee5e2cb42255f4b2
+Signer #1 certificate SHA-1 digest:   cf1ffb40b37ace31550bcbbffeddcbde5ac7b1a0
+Signer #1 certificate MD5 digest:     41bdb08532b373e07561e91c66d32db0</code></pre>
+
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td><strong>DN — Distinguished Name</strong></td><td>Human-readable identity claimed by the cert's owner. <strong>Anyone can put any text here</strong>, so don't trust DN alone.</td></tr>
+  <tr><td><strong>CN</strong> (Common Name)</td><td>Person/product name (e.g. <code>Eran Katsav</code>, <code>Android Debug</code>, <code>Google Inc.</code>)</td></tr>
+  <tr><td><strong>OU</strong> (Organizational Unit)</td><td>Department / unit</td></tr>
+  <tr><td><strong>O</strong> (Organization)</td><td>Company name</td></tr>
+  <tr><td><strong>L</strong> (Locality) — <strong>ST</strong> (State) — <strong>C</strong> (Country code, ISO 3166)</td><td>Geographic claim</td></tr>
+  <tr><td><strong>SHA-256 digest</strong></td><td>The thing this drill cares about. See §4.</td></tr>
+  <tr><td><strong>SHA-1 digest</strong></td><td>Same idea, older hash, kept for backward compatibility. Considered weak today.</td></tr>
+  <tr><td><strong>MD5 digest</strong></td><td>Even older hash, broken cryptographically. Don't rely on it.</td></tr>
+</table>
+
+<p><strong>Key lesson</strong>: the <em>only</em> hard identity in a cert is its public key, summarised by the SHA-256 fingerprint. The DN text fields are like the name on a t-shirt — easy to lie about. The fingerprint is like the t-shirt's DNA — uniquely tied to the underlying private key.</p>
+
+<!-- ============================== 4 ============================== -->
+<h2 id="sha256">4. What is SHA-256 and why this drill checks it</h2>
+<p><strong>SHA-256</strong> is a cryptographic hash function: feed it any input, get back a 256-bit (32-byte / 64-hex-character) value. Three properties matter for us:</p>
+
+<ol>
+  <li><strong>Deterministic</strong> — same input always produces the same output.</li>
+  <li><strong>Avalanche</strong> — change one bit of input and ~half the output bits flip. So two even slightly different certificates produce wildly different fingerprints.</li>
+  <li><strong>Collision-resistant</strong> — it is computationally infeasible to find two different certificates with the same SHA-256. With ~2<sup>128</sup> work needed, "infeasible" means "no realistic adversary can".</li>
+</ol>
+
+<p>In our context we hash the <strong>whole certificate</strong> (encoded in DER form). Result: a 64-hex string that uniquely identifies the cert. Two APKs with the same SHA-256 fingerprint were therefore signed by the same private key — i.e. by the same developer.</p>
+
+<p>Why we use the <em>fingerprint</em> and not the certificate itself:</p>
+<ul>
+  <li>A certificate is a few KB of binary data. Comparing them directly is awkward; printing them is unreadable.</li>
+  <li>A 64-hex fingerprint is short, copy-pasteable, and one wrong character means "different cert".</li>
+  <li>All the slides, Play Console, Firebase, and Google Sign-In APIs identify apps by their SHA-256 (or SHA-1) signing fingerprint.</li>
+</ul>
+
+<div class="note">
+  <strong>Why is the same value sometimes shown as <code>49:30:28:20:...</code> and other times as <code>493028204afeae...</code>?</strong> It's the same 32 bytes — just two display conventions. <code>apksigner</code> prints it lowercase without colons; <code>keytool</code> prints it uppercase with colons. Our scripts accept both formats and normalise internally.
+</div>
+
+<!-- ============================== 5 ============================== -->
+<h2 id="drill">5. The drill — what to find</h2>
+<p>You will run the script twice on the instructor's Galaxy A51:</p>
+
+<ol>
+  <li><strong>Quick demo with <code>-u</code></strong> (user-installed apps only) — ~30 seconds, ~20 packages. Easy to read in class.</li>
+  <li><strong>Full scan with no flags</strong> — ~10 minutes, all ~420 packages. The interesting stuff lives here.</li>
+</ol>
+
+<p>We'll start the full scan during a break so it's ready when you return.</p>
+
+<h3>5.1 Quick demo — user-installed apps (<code>./find_apps_by_signature.sh -u</code>)</h3>
+
+<p>Command run:</p>
+<pre><code>./find_apps_by_signature.sh -u</code></pre>
+
+<p>Output (truncated for length, full version in <code>/tmp/final_run.log</code>):</p>
+
+<pre><code>Listing installed packages...
+Scanning 20 packages and grouping by SHA-256...
+[ 20/ 20] com.koushikdutta.vysor
+
+Developer groups (signature -> packages):
+------------------------------------------
+
+[3 apps] A6:64:9A:F7:D0:1A:E4:3F:0B:03:1F:7A:EE:B4:C6:9B:C7:79:D3:9A:21:14:5E:42:1A:AC:D3:63:7A:32:67:52
+  com.example.dynamiccodeloader
+  com.example.networktraffic
+  il.co.syntax.adbtraining
+
+[3 apps] 49:30:28:20:4A:FE:AE:02:0D:35:92:64:C5:EC:97:68:0B:13:CF:F8:AC:52:D2:86:EE:5E:2C:B4:22:55:F4:B2
+  com.pzlapps.bipit
+  com.pzlapps.translateit
+  com.pzlapps.vocaller
+
+[2 apps] 5A:AD:2B:EE:6D:B9:5D:17:E0:5A:08:D7:D1:E6:4C:10:A1:51:18:79:15:44:83:91:6B:6A:E6:C7:FD:9C:B0:C6
+  com.google.android.apps.photos
+  com.google.android.videos
+
+[1 apps] FB:92:0D:38:1B:EE:1B:20:93:F2:7D:C8:F1:3D:99:4D:A6:29:DC:91:88:7D:05:29:B3:5C:9A:2D:C4:F4:A6:C2
+  com.whatsapp
+
+[1 apps] 39:87:D0:43:D1:0A:EF:AF:5A:87:10:B3:67:14:18:FE:57:E0:E1:9B:65:3C:9D:F8:25:58:FE:B5:FF:CE:5D:44   <- (legacy WhatsApp pre-rotation, see §5.2 note)
+... 12 more single-app groups (Spotify, Firefox, Mozilla, Samsung, etc.) ...
+
+Done. (Scanned 20 packages.)</code></pre>
+
+<h3>5.2 What each group from the quick demo teaches</h3>
+
+<p><strong>Group A — <code>A6:64:9A:F7:D0:1A:...</code> (3 apps: dynamiccodeloader, networktraffic, adbtraining)</strong><br>
+DN: <code>CN=Android Debug, O=Android, C=US</code>. This is the <strong>default Android debug keystore</strong> that Android Studio creates the first time you run a project. <em>Every</em> developer in the world who has not configured a release keystore signs with the same key locally. So when you see <code>A6:64:9A:F7:...</code> (and DN of "Android Debug"), the app was almost certainly built and side-loaded from someone's laptop, not published to Play Store.</p>
+
+<p><strong>Group B — <code>49:30:28:20:4A:FE:...</code> (3 apps: bipit, translateit, vocaller)</strong><br>
+DN: <code>CN=Eran Katsav, OU=Puzzle Appliactions, L=Kfar Varburg, ST=Israel, C=IL</code>. This is the <strong>instructor's real release certificate</strong>. All three are PzlApps (Puzzle Applications) production builds installed from Play Store. Lesson: a single certificate fingerprint ties multiple apps to one author across multiple Play listings.</p>
+
+<p><strong>Group C — <code>5A:AD:2B:EE:6D:B9:...</code> (2 apps: Photos, Videos)</strong><br>
+DN: <code>CN=Android, O=Google Inc.</code>. Google's mobile-services release certificate. Many Google apps share this single cert, which is why they can declare <code>signature</code>-level permissions amongst themselves.</p>
+
+<p><strong>WhatsApp's two fingerprints (rotation)</strong><br>
+WhatsApp introduced <strong>APK Signature Scheme v3 key rotation</strong> in 2022. The script reports the <strong>newest</strong> fingerprint (<code>FB:92:0D:38:...</code>, valid for Android 13+). The older fingerprint (<code>39:87:D0:43:...</code>, used on Android 7–12) is still embedded in the APK and will appear if you run <code>apksigner verify --print-certs</code> directly. Lesson: a developer can rotate to a new private key without losing the trust chain, by signing the new cert with the old one.</p>
+
+<details>
+  <summary>Wait — how do we know there's a second cert? The script only showed one!</summary>
+  <p>Good catch. The script's grouped output for WhatsApp is just one line:</p>
+  <pre><code>[1 app] FB:92:0D:38:1B:EE:... → com.whatsapp</code></pre>
+  <p>That output by itself proves nothing about rotation. The script <strong>intentionally</strong> reports only the newest fingerprint per package — see §7.4: it grabs the first <code>Signer</code> line in <code>apksigner</code>'s output and ignores the rest. If it reported every cert separately, WhatsApp would land in two groups and look like "two different developers", which would be misleading.</p>
+  <p>To <em>actually see</em> the two certs side by side, you have to run <code>apksigner</code> directly on the WhatsApp APK, bypassing the script's filter:</p>
+  <pre><code># 1. find the APK on the phone
+adb shell pm path com.whatsapp
+
+# 2. pull base.apk to your laptop (path will be something like /data/app/~~xxx==/com.whatsapp-yyy==/base.apk)
+adb pull &lt;that-path&gt; whatsapp.apk
+
+# 3. ask apksigner to print every signer
+$ANDROID_HOME/build-tools/&lt;latest&gt;/apksigner verify \
+  --min-sdk-version 28 --print-certs whatsapp.apk</code></pre>
+  <p>You'll get two <code>Signer (minSdkVersion=…)</code> lines, like this (real format — same shape we'd see in any v3-rotated app, e.g. Google Photos):</p>
+  <pre><code>Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: fb920d38...
+Signer (minSdkVersion=24, maxSdkVersion=32)         certificate SHA-256 digest: 3987d043...
+Source Stamp Signer certificate SHA-256 digest: 3257d599...</code></pre>
+  <p>Two <code>Signer (minSdkVersion=…)</code> lines = two certs in the APK. The first applies to Android 13+ (<code>minSdkVersion=33</code>), the second applies to Android 7–12 (<code>minSdkVersion=24, maxSdkVersion=32</code>). Each Android version picks the line whose range covers it. That's v3 key rotation.</p>
+  <p>This is also exactly what self-check task #1 in §9 asks you to do — pull a single APK and run <code>apksigner</code> on it directly. WhatsApp is one of the most interesting candidates because of this rotation.</p>
+</details>
+
+<h3>5.3 Full scan — every package on the device (<code>./find_apps_by_signature.sh</code>)</h3>
+
+<p>Now drop the <code>-u</code> and let the script process every package — system, vendor, and user. On the lab A51 this is ~423 packages and takes about 10 minutes. The output is much richer because it exposes the <em>platform</em> certs that ship with the OS.</p>
+
+<pre><code>./find_apps_by_signature.sh</code></pre>
+
+<p>Top groups, abbreviated:</p>
+
+<pre><code>[268 apps] 34:DF:0E:7A:9F:1C:F1:89:2E:45:C0:56:B4:97:3C:D8:1C:CF:14:8A:40:50:D1:1A:EA:4A:C5:A6:5F:90:0A:42
+  android
+  com.android.bluetooth, com.android.nfc, com.android.phone, com.android.settings, com.android.shell, com.android.systemui, ...
+  com.samsung.android.dialer, com.samsung.android.honeyboard, com.samsung.android.knox.*, com.samsung.android.mobileservice, ...
+  com.samsung.knox.securefolder, com.samsung.android.bixby.agent, com.samsung.faceservice, com.samsung.android.spayfw, ...
+  com.sec.android.app.camera, com.sec.android.app.launcher, com.sec.android.gallery3d, ...
+  (~268 entries total)
+
+[44 apps] B9:A4:2D:D5:FC:4E:05:48:89:AE:41:27:A6:27:4C:EC:64:E7:5C:41:73:3D:42:F5:99:1E:70:19:F9:EA:5C:AF
+  android.auto_generated_rro_product__
+  com.android.internal.display.cutout.emulation.{corner,double,hole,tall,waterfall}
+  com.android.internal.systemui.navbar.{gestural,gestural_extra_wide_back,threebutton,...}
+  com.android.theme.font.notoserifsource
+  com.monotype.android.font.foundation
+  com.monotype.android.font.samsungone
+  com.google.android.overlay.gmsconfig.{asi, common, geotz, gsa, photos}
+  ...
+
+[8 apps] 7C:E8:3C:1B:71:F3:D5:72:FE:D0:4C:8D:40:C5:CB:10:FF:75:E6:D8:7D:9D:F6:FB:D5:3F:04:68:C2:90:50:53
+  com.android.vending           ← Play Store
+  com.google.android.apps.maps  ← Maps
+  com.google.android.gm         ← Gmail
+  com.google.android.gms        ← Google Mobile Services core
+  com.google.android.googlequicksearchbox
+  com.google.android.gsf
+  com.google.android.syncadapters.calendar
+  com.google.android.tts
+
+[7 apps] F0:FD:6C:5B:41:0F:25:CB:25:C3:B5:33:46:C8:97:2F:AE:30:F8:EE:74:11:DF:91:04:80:AD:6B:2D:60:DB:83
+  com.android.chrome
+  com.google.android.apps.docs
+  com.google.android.configupdater
+  com.google.android.feedback
+  com.google.android.onetimeinitializer
+  com.google.android.partnersetup
+  com.google.android.setupwizard
+
+[3 apps] B9:21:09:B5:90:95:95:5C:CA:AF:5E:CB:CF:0F:15:3E:C9:64:0A:46:58:C1:01:66:7A:D9:6B:7E:49:9A:40:92
+  com.facebook.appmanager
+  com.facebook.services
+  com.facebook.system
+
+[3 apps] 5A:AD:2B:EE:6D:B9:5D:17:E0:5A:08:D7:D1:E6:4C:10:A1:51:18:79:15:44:83:91:6B:6A:E6:C7:FD:9C:B0:C6
+  com.google.android.apps.photos
+  com.google.android.videos
+  com.google.android.youtube              ← was hidden in the -u scan because YouTube is a system app
+
+[3 apps] A6:64:9A:F7:D0:1A:E4:3F:0B:03:1F:7A:EE:B4:C6:9B:C7:79:D3:9A:21:14:5E:42:1A:AC:D3:63:7A:32:67:52
+  com.example.dynamiccodeloader
+  com.example.networktraffic
+  il.co.syntax.adbtraining
+
+[3 apps] 49:30:28:20:4A:FE:AE:02:0D:35:92:64:C5:EC:97:68:0B:13:CF:F8:AC:52:D2:86:EE:5E:2C:B4:22:55:F4:B2
+  com.pzlapps.bipit
+  com.pzlapps.translateit
+  com.pzlapps.vocaller
+
+[1 apps] FB:92:0D:38:1B:EE:1B:20:93:F2:7D:C8:F1:3D:99:4D:A6:29:DC:91:88:7D:05:29:B3:5C:9A:2D:C4:F4:A6:C2
+  com.whatsapp                            ← newest cert; legacy 39:87:D0:43:... still in APK
+
+(plus several smaller groups: contacts subsystem, media providers, ANT+, CTS shims, networking stack, Galaxy Store, etc.)</code></pre>
+
+<h4>What each big group teaches</h4>
+
+<p><strong>[268 apps] <code>34:DF:0E:7A:9F:1C:...</code> — the Samsung platform cert.</strong><br>
+This is the <strong>most powerful key on the device.</strong> It signs <code>android</code> itself (the framework), every <code>com.android.*</code> (Bluetooth, NFC, phone, settings, SystemUI), every <code>com.samsung.*</code>, every <code>com.sec.*</code> (Samsung Galaxy launcher, camera, gallery, dialer), Knox, Samsung Pay, Bixby, all of Honeyboard. Apps signed with this cert get <code>signatureOrSystem</code>-level permissions automatically and can join <code>android.uid.system</code>, sharing the system UID's storage and IPC. Two implications:</p>
+
+<ul>
+  <li><strong>Samsung re-signs the AOSP framework on Galaxy builds.</strong> <code>android</code> (the framework!) is here, not in a Google group. Samsung builds AOSP with their own platform key. That's how every OEM differentiates.</li>
+  <li><strong>If this private key ever leaks, every Galaxy A51 in the world is owned forever.</strong> The OS will accept <em>any</em> APK signed with it as a system app. This is why platform keys are the most aggressively guarded secrets in mobile.</li>
+</ul>
+
+<p><strong>[44 apps] <code>B9:A4:2D:D5:FC:4E:...</code> — the AOSP/Samsung overlay cert.</strong><br>
+These are not real apps. They are <strong>Runtime Resource Overlays (RROs)</strong> — drawable/string/dimension overrides bundled as fake APKs. They let Samsung switch the navbar style (<code>navbar.gestural</code>, <code>navbar.threebutton</code>), display-cutout shape (corner/double/hole/tall/waterfall), or font (<code>font.notoserifsource</code>, <code>font.samsungone</code>) without modifying the apps that consume those resources. A separate cert because they're shipped by the device as theming, not as functional apps.</p>
+
+<p><strong>[8 apps] <code>7C:E8:3C:1B:71:F3:...</code> — the Google Mobile Services release cert.</strong><br>
+Possibly the single most valuable signing key on Earth. Look at what it covers: <strong><code>com.android.vending</code> (the Play Store itself)</strong>, Gmail, Maps, GMS, Google Search, the Google Services Framework, calendar sync, Google TTS. Whoever holds this private key can ship any code as a "GMS update" to ~3 billion phones. Apps in this group share permissions amongst themselves via signature-level perms (so Maps can talk to GMS without user prompts).</p>
+
+<div class="note">
+  <strong>How does Play Store install other apps if it's not platform-signed?</strong> The Play Store has the <code>INSTALL_PACKAGES</code> permission, which is <code>signatureOrSystem</code> — and it doesn't share Samsung's platform cert. It gets the permission via a <strong>third mechanism</strong>: it lives in <code>/system/priv-app/</code> and the OEM ships an explicit allowlist XML at <code>/etc/permissions/privapp-permissions-google.xml</code> that names <code>com.android.vending</code> and the exact set of privileged perms it's allowed to hold (since Android 8 this allowlist is mandatory; before then every priv-app got every perm it declared, which OEMs were abusing for bloatware). So three tiers exist, not two: <strong>platform-signed</strong> (shares the framework's cert, ~268 apps), <strong>privileged</strong> (lives in <code>/system/priv-app/</code> + named in an allowlist, e.g. Play Store), and <strong>regular system app</strong> (in <code>/system/app/</code>, no special access).
+</div>
+
+<p><strong>[7 apps] <code>F0:FD:6C:5B:41:0F:...</code> — Google's "legacy/system" cert.</strong><br>
+Different from GMS: Chrome, Google Docs, Setup Wizard, partner setup, configupdater. Lesson: "Google" is not one cert. The company segregates signing keys across product families so that a leak of one doesn't compromise everything. (If GMS leaks, Chrome is still safe; if Chrome leaks, the Play Store is still safe.)</p>
+
+<p><strong>[3 apps] <code>B9:21:09:B5:90:95:...</code> — pre-installed Facebook bloatware.</strong><br>
+<code>com.facebook.appmanager</code>, <code>com.facebook.services</code>, <code>com.facebook.system</code>. These ship on Samsung devices even if the user never had a Facebook account. They cannot be uninstalled — only "Disabled" via Settings — and they continue to consume RAM, battery, and network on first boot. Privacy talking point: a signed cert lets Samsung and Facebook agree on these apps surviving every system update.</p>
+
+<p><strong>[3 apps] <code>5A:AD:2B:EE:6D:B9:...</code> — Google "video/photo family" cert.</strong><br>
+Photos, Videos, YouTube. (YouTube was invisible in the <code>-u</code> scan because Samsung pre-installs it as a system app — it only appears in the full scan.)</p>
+
+<p><strong>[3 apps] <code>A6:64:9A:F7:D0:1A:...</code> — the Android Studio default debug keystore.</strong><br>
+Same as in the quick demo. Sideloaded test apps signed with the universal debug key.</p>
+
+<p><strong>[3 apps] <code>49:30:28:20:4A:FE:...</code> — instructor's release cert.</strong><br>
+Same as in the quick demo. Real-world example of a small-scale developer reusing one cert across multiple Play Store listings.</p>
+
+<p><strong>[1 app] <code>FB:92:0D:38:1B:EE:...</code> — WhatsApp post-rotation cert.</strong><br>
+The newest of WhatsApp's two embedded certs. The legacy cert (<code>39:87:D0:43:...</code>, used on Android 7–12) is still inside the APK to satisfy older devices, but the script reports the newest one (used on Android 13+).</p>
+
+<h4>The big takeaways from the full scan</h4>
+
+<ul>
+  <li><strong>One vendor cert dominates the device.</strong> ~63% of the packages on this A51 (268/423) share one Samsung key. That key is the de-facto root of trust for everything Samsung-branded.</li>
+  <li><strong>"Google" is not one developer.</strong> At least three distinct Google certs ship on this A51 (GMS, legacy/system, video-family) — and there are more on the full output that we didn't show.</li>
+  <li><strong>Apps share certs to share permissions.</strong> Two apps signed with the same key can declare <code>signature</code>-level permissions or <code>sharedUserId</code> between themselves with zero user friction. That's why Samsung apps talk to each other freely, and why Gmail can read the Maps storage if it wants to.</li>
+  <li><strong>A debug-signed app on a stranger's phone is suspicious.</strong> All ~420 packages should have a corporate cert. Only sideloaded test builds show the <code>Android Debug</code> cert. If you find one and didn't install it, something is wrong.</li>
+</ul>
+
+<h3>5.4 What to find on YOUR phone</h3>
+
+<p>After you run the script, answer these questions:</p>
+
+<ol>
+  <li>How many apps are signed with the <strong>debug keystore</strong> (<code>CN=Android Debug</code>)? These are sideloaded test apps. If you see one you didn't recognise, it might be malware someone installed.</li>
+  <li>Which Play Store apps share a fingerprint with another app you have? (Hint: many vendor apps — Samsung, Google, Microsoft — group together.)</li>
+  <li>Pick any Google app and verify its signature using <strong>APKMirror</strong>: go to <a href="https://www.apkmirror.com" target="_blank">https://www.apkmirror.com</a>, search for the app (e.g. "Google Photos"), pick any version, scroll to the <strong>"App Info"</strong> section. APKMirror publishes the SHA-256 fingerprint of every APK they host. Compare it with the fingerprint your script reported — they should match. (Note: Google itself does <strong>not</strong> publish a public list of its app signing certificates, so APKMirror — which independently extracts and displays the fingerprint of each uploaded APK — is the most reliable third-party source.)</li>
+  <li>Run the script in <strong>filter mode</strong> with the instructor's signature (<code>-t 49:30:28:20:4A:FE:AE:02:0D:35:92:64:C5:EC:97:68:0B:13:CF:F8:AC:52:D2:86:EE:5E:2C:B4:22:55:F4:B2</code>). It should match <code>bipit</code>, <code>translateit</code>, <code>vocaller</code>. If it doesn't, your <code>apksigner</code> is too old (see §7).</li>
+</ol>
+
+<!-- ============================== 6 ============================== -->
+<h2 id="run">6. How to run the scripts</h2>
+
+<h3>6.1 macOS / Linux — <code>find_apps_by_signature.sh</code></h3>
+
+<pre><code># 1. mark executable (only first time)
+chmod +x find_apps_by_signature.sh
+
+# 2. group every package on the phone by developer (full system + user, ~10 min on a busy phone)
+./find_apps_by_signature.sh
+
+# 3. RECOMMENDED — group only the user-installed apps (~30 sec)
+./find_apps_by_signature.sh -u
+
+# 4. filter to apps signed with one specific cert
+./find_apps_by_signature.sh -u -t 49:30:28:20:4A:FE:AE:02:0D:35:92:64:C5:EC:97:68:0B:13:CF:F8:AC:52:D2:86:EE:5E:2C:B4:22:55:F4:B2
+
+# 5. multiple devices attached — pick one
+./find_apps_by_signature.sh -u -s R58R404WTXY
+
+# 6. help
+./find_apps_by_signature.sh -h</code></pre>
+
+<h3>6.2 Windows — <code>GetPackages.ps1</code> (PowerShell)</h3>
+
+<p>PowerShell ships with every Windows 10 / 11 install — there is <strong>nothing to install</strong>. Open the Start menu, type <code>PowerShell</code>, hit Enter, then <code>cd</code> into the course folder before running the commands below.</p>
+
+<p>PowerShell is installed on every Windows 10/11 box. By default it refuses to run any <code>.ps1</code> files at all — that's a safety feature called the <strong>execution policy</strong>, set to <code>Restricted</code> out of the box, intended to stop a stranger's script from running just because you double-clicked it. We don't want to weaken this globally, so for each invocation we pass <code>-ExecutionPolicy Bypass</code> which lifts the restriction <em>only for that single command</em> (the system-wide setting is untouched). Other useful flags: <code>-NoProfile</code> skips your PowerShell profile (faster startup), <code>-File</code> says "run this script file then exit". So the full command means: "PowerShell, lift the script-execution restriction just this once, run <code>GetPackages.ps1</code> with these arguments, and quit."</p>
+
+<pre><code># 1. group user-installed apps (~30 sec)
+powershell -ExecutionPolicy Bypass -File .\GetPackages.ps1 -UserOnly
+
+# 2. group every package (~10 min)
+powershell -ExecutionPolicy Bypass -File .\GetPackages.ps1
+
+# 3. filter to one cert (colons optional, lowercase or upper, both work)
+powershell -ExecutionPolicy Bypass -File .\GetPackages.ps1 -UserOnly `
+    -TargetSignature 49:30:28:20:4A:FE:AE:02:0D:35:92:64:C5:EC:97:68:0B:13:CF:F8:AC:52:D2:86:EE:5E:2C:B4:22:55:F4:B2
+
+# 4. multiple devices — pick one
+powershell -ExecutionPolicy Bypass -File .\GetPackages.ps1 -UserOnly -Serial R58R404WTXY
+
+# 5. help
+powershell -ExecutionPolicy Bypass -File .\GetPackages.ps1 -?</code></pre>
+
+<p>If you'd rather not type <code>-ExecutionPolicy Bypass</code> each time, run <strong>once</strong> in an elevated PowerShell:</p>
+<pre><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+Unblock-File .\GetPackages.ps1</code></pre>
+<p>…and from then on <code>.\GetPackages.ps1 -UserOnly</code> works directly.</p>
+
+<!-- ============================== 7 ============================== -->
+<h2 id="important">7. Important parts of the scripts (read this if it doesn't work)</h2>
+<p>The <code>.sh</code> and <code>.ps1</code> do the same five things. Below are the <strong>non-obvious bits</strong> — every line was put there to fix a real bug encountered on the lab phone.</p>
+
+<h3>7.1 We use <code>apksigner</code>, not <code>keytool</code></h3>
+<p>The original course script used <code>keytool -printcert -jarfile</code>. <strong><code>keytool</code> only reads APK Signature Scheme v1 (the old JAR signing format).</strong> Modern apps signed with v2 or v3 only — that's almost every Play Store app today — come back as <code>Not a signed jar file</code> and the script silently produces nothing. This is why the previous version of the drill returned zero matches even when the signatures were on the phone.</p>
+<p>The fix: use <code>apksigner</code> from build-tools, which understands all four signing schemes (v1, v2, v3, v4). <code>keytool</code> remains as a fallback for environments that don't have build-tools installed — but you'll be warned that the results will be incomplete.</p>
+
+<h3>7.2 We pass <code>--min-sdk-version 28</code></h3>
+<pre><code>apksigner verify --min-sdk-version 28 --print-certs base.apk</code></pre>
+<p>Without <code>--min-sdk-version</code>, <code>apksigner</code> insists on verifying <strong>all</strong> signature schemes the APK <em>could</em> be checked against. Many modern APKs have stripped their v1 manifest (<code>META-INF/MANIFEST.MF</code>) entirely because they target Android 9+. <code>apksigner</code> then errors out with <code>DOES NOT VERIFY — Missing META-INF/MANIFEST.MF</code> and refuses to print any cert info. By passing <code>--min-sdk-version 28</code> we say "we don't care about pre-Android 9 verification", which makes apksigner happy and lets it print the v2/v3 certificates.</p>
+
+<h3>7.3 We always pick the newest installed <code>apksigner</code></h3>
+<pre><code>LATEST_BT=$(ls -1 "$SDK_ROOT/build-tools" | sort -V | tail -n 1)
+APKSIGNER_BIN="$SDK_ROOT/build-tools/$LATEST_BT/apksigner"</code></pre>
+<p>build-tools versions ≤ 30.0.3 do <strong>not</strong> support <code>--min-sdk-version</code> correctly and will still fail on v2-only APKs. The script forces the newest installed version regardless of <code>PATH</code>. If you only have 30.0.3 or older, install something newer via Android Studio's SDK Manager (build-tools 33+).</p>
+
+<h3>7.4 We match <code>^Signer .*certificate SHA-256 digest:</code>, not <code>^Signer #1 ...</code></h3>
+<p><code>apksigner</code> prints two formats depending on the APK:</p>
+<pre><code>Signer #1 certificate SHA-256 digest: &lt;hex&gt;                                  (single signer)
+Signer (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: &lt;hex&gt;   (v3 rotation)</code></pre>
+<p>A regex anchored on <code>Signer #1</code> misses every app that has rotated keys — WhatsApp, Photos, Videos. The broader pattern <code>^Signer .*certificate SHA-256 digest:</code> (note the space after "Signer", which excludes "Source Stamp Signer") catches both formats and we take the first match (which is the newest cert in v3 rotation).</p>
+
+<h3>7.5 We deliberately ignore "Source Stamp Signer"</h3>
+<p>Apps shipped through Play Store have an extra cert called the <strong>Source Stamp</strong> — Google adds this so Play Protect can detect tampering. It's the <em>same</em> cert (<code>3257d599a49d2c961a471ca9843f59d341a405884583fc087df4237b733bbd6d</code>) on every Play app, so grouping by it would lump every Play app together regardless of developer. Our regex only matches lines that start with <code>Signer </code> (a literal space), which excludes lines starting with <code>Source Stamp Signer</code>.</p>
+
+<h3>7.6 We pull only <code>base.apk</code>, not split APKs</h3>
+<p>Modern apps are delivered as App Bundles — multiple <code>.apk</code> files (<code>base.apk</code>, <code>split_config.en.apk</code>, <code>split_config.xxhdpi.apk</code>, etc.) installed together. <strong>Every split shares the parent's signature</strong>, so we save 3-5× of pull time by checking only <code>base.apk</code> (the first path that <code>pm path &lt;pkg&gt;</code> returns).</p>
+
+<h3>7.7 The progress line uses <code>\r</code></h3>
+<pre><code>printf "\r[%3d/%3d] %-60s" "$i" "$TOTAL" "$PKG"</code></pre>
+<p>Without this, students stare at a blank terminal for several minutes wondering if the script froze. The <code>\r</code> (carriage return without newline) lets us update one line in place. Same effect achieved in PowerShell with <code>Write-Progress</code>.</p>
+
+<h3>7.8 One bad APK no longer kills the whole scan</h3>
+<p><strong>The original bug.</strong> On a Galaxy A51 running Android 11, students saw the script halt in the middle of the scan with:</p>
+<pre><code>Method invocation failed because [System.Object[]] does not contain a method named 'Trim'.</code></pre>
+<p>Cause: <code>pm path &lt;pkg&gt;</code> for some packages (split-APK bundles, Samsung dictionary/IME/billing stubs) returns <strong>multiple <code>package:</code> lines</strong>, one per APK file. The old one-liner</p>
+<pre><code>$apkPath = (&amp; adb shell pm path $pkg | Select-Object -First 1) -replace 'package:', ''
+$apkPath = $apkPath.Trim()</code></pre>
+<p>occasionally produced an <code>Object[]</code> instead of a single string, and <code>.Trim()</code> doesn't exist on arrays. Because <code>$ErrorActionPreference = "Stop"</code>, that one bad package crashed the entire run.</p>
+<p><strong>The fix.</strong> Two changes:</p>
+<ol>
+  <li>Replace the brittle one-liner with a defensive three-step parse: force <code>pm path</code> output into an array, filter to lines starting with <code>package:</code>, take the first, coerce to string, then trim.</li>
+  <li>Wrap the whole per-package body in a <code>try { ... } catch { ... }</code>. Any failure on one APK is logged into a <code>$skipped</code> list with the reason, and the scan continues to the next package. The final summary prints both the developer groups and the skipped list.</li>
+</ol>
+<p><strong>Why mostly on Android 11 A51 and not Android 13 A51:</strong> the buggy <code>pm path</code> output came from older Samsung One UI 3 (Android 11) preinstalls — the dictionary stub, the v-voice IME, and the billing app, all packaged with an older Samsung build pipeline. One UI 5 (Android 13) rebuilt those packages and reorganised some into APEX modules, so they return clean single-line paths. Same bug class, just statistically more visible on the older image.</p>
+
+<h3>7.9 We fall back to <code>keytool</code> when <code>apksigner</code> says "DOES NOT VERIFY"</h3>
+<p><strong>The second bug.</strong> On the same Android 11 A51, three specific preinstalls reproducibly failed apksigner with:</p>
+<pre><code>com.diotek.sec.lookup.dictionary
+com.samsung.android.svoiceime
+com.sec.android.app.billing
+
+ERROR: JAR signer CERT.RSA: JAR signature META-INF/CERT.SF indicates the APK is
+signed using APK Signature Scheme v2 but no such signature was found.
+Signature stripped?</code></pre>
+<p><strong>What's actually wrong with these APKs.</strong> Each one is signed only with the legacy v1 (JAR) scheme. However, the v1 manifest (<code>META-INF/CERT.SF</code>) contains the line <code>X-Android-APK-Signed: 2</code> — the v1 signer's way of saying "a v2 block should also be present alongside me". The matching v2 block is missing. <code>apksigner</code> treats this discrepancy as evidence of tampering (someone may have stripped v2 to downgrade) and refuses to print the certificate. The phone's <code>PackageManager</code> doesn't make this strict check at runtime, so the APK runs fine on the device but our offline tool rejects it.</p>
+<p><strong>The fix.</strong> When <code>apksigner</code> returns no signature for an APK and <code>keytool</code> is available, the script now falls back to <code>keytool -printcert -jarfile</code> on a per-package basis. <code>keytool</code> predates the v2/v3 schemes entirely — it reads only the v1 (JAR) certificate and doesn't care about the <code>X-Android-APK-Signed: 2</code> claim — so it extracts the cert cleanly. Successfully recovered packages are listed in a <strong>"apksigner failed and keytool succeeded"</strong> section at the end of the run, so students can see exactly which packages took the fallback path.</p>
+<p>Result on a Samsung A51 / Android 11 lab phone: <code>Scanned 452 packages, skipped 60, keytool fallback used on 3</code>. The three keytool-recovered packages share a single SHA-256 (<code>BE:1C:52:3F:…:28:58</code>, <code>OU=translator, O=voiceservice</code>) — meaning the Diotek dictionary and the Samsung voice IME are signed by the same vendor. That's exactly the developer-correlation lesson the drill is teaching.</p>
+<p><strong>Why "skipped 60"?</strong> Those are RRO (Runtime Resource Overlay) APKs in <code>/product/overlay/</code> and <code>/vendor/overlay/</code>. <code>pm path</code> reports their paths, but <code>adb pull</code> can't read them <em>even though the Unix permissions show <code>-rw-r--r--</code> (world-readable)</em>. The reason is <strong>SELinux</strong>: these files are labelled <code>u:object_r:vendor_overlay_file:s0</code>, and the policy doesn't grant the <code>shell</code> domain read access to that type. Files in <code>/system/priv-app/</code> (which the script <em>can</em> pull) are labelled <code>system_file</code>, which <code>shell</code> <em>is</em> allowed to read. Same chmod, different SELinux type, different outcome — only <code>root</code> would bypass it. This is a useful real-world point: Android's file security has <strong>two layers</strong> (Unix DAC <em>and</em> SELinux MAC), and the second is what stops non-root tooling from reading vendor overlays.</p>
+
+<!-- ============================== 8 ============================== -->
+<h2 id="problems">8. Common problems</h2>
+<table>
+  <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+  <tr><td><code>adb: not found</code></td><td>platform-tools not on PATH</td><td>Add <code>&lt;SDK&gt;/platform-tools</code> to PATH</td></tr>
+  <tr><td><code>apksigner: not found</code></td><td>build-tools not on PATH</td><td>Add <code>&lt;SDK&gt;/build-tools/&lt;version&gt;</code> to PATH, or run from inside Android Studio's terminal</td></tr>
+  <tr><td><code>List of devices attached</code> is empty</td><td>USB cable, USB drivers (Windows), or USB debugging off</td><td>Check cable supports data, install Samsung driver, enable USB debugging</td></tr>
+  <tr><td>Phone shows as <code>unauthorized</code></td><td>RSA key not yet trusted</td><td>Tap <strong>Allow</strong> on the phone's USB debugging dialog. If no dialog: Settings → Developer options → Revoke USB debugging authorizations, then replug</td></tr>
+  <tr><td><code>multiple devices attached</code></td><td>Emulator + phone, or two phones</td><td>Pass <code>-s &lt;serial&gt;</code> (sh) / <code>-Serial &lt;serial&gt;</code> (PowerShell)</td></tr>
+  <tr><td>Many packages return blank signatures</td><td><code>apksigner</code> ≤ 30.0.3</td><td>Open Android Studio → SDK Manager → install build-tools 33+</td></tr>
+  <tr><td><code>WARN: apksigner not found; falling back to keytool</code></td><td>build-tools missing entirely</td><td>As above — install build-tools via SDK Manager</td></tr>
+  <tr><td>PowerShell: <code>cannot be loaded because running scripts is disabled</code></td><td>Default execution policy is Restricted</td><td>Use <code>powershell -ExecutionPolicy Bypass -File .\GetPackages.ps1 ...</code> (per-command bypass, doesn't change system policy)</td></tr>
+  <tr><td>Script crashes mid-run: <code>[System.Object[]] does not contain a method named 'Trim'</code></td><td>Old version of <code>GetPackages.ps1</code> — fragile <code>pm path</code> parsing on split-APK / Samsung-stub packages (mostly Android 11 A51)</td><td>Use the current <code>GetPackages.ps1</code> (see §7.8). It parses defensively and wraps the per-package work in try/catch — one bad APK is skipped, not fatal.</td></tr>
+  <tr><td>Specific Samsung preinstalls show <code>DOES NOT VERIFY</code> (dictionary, svoiceime, sec.android.app.billing)</td><td>v1-signed APK whose <code>CERT.SF</code> manifest claims a v2 signature that was stripped during the Samsung build (Android 11 image)</td><td>No action — the current script auto-falls back to <code>keytool</code> for these (see §7.9). They appear in the "apksigner failed and keytool succeeded" section of the output.</td></tr>
+  <tr><td>~60 system overlay packages appear under "Skipped packages" with <code>pull failed: /product/overlay/...</code> or <code>/vendor/overlay/...</code></td><td>Not a bug. SELinux denies the <code>shell</code> user read access to <code>vendor_overlay_file</code>-labelled files, even though Unix perms show world-readable.</td><td>None — this is expected on retail (non-root) phones. The overlay APKs are tiny resource-override packages and don't add useful developer-grouping information.</td></tr>
+</table>
+
+<!-- ============================== 9 ============================== -->
+<h2 id="selfcheck">9. Self-check tasks</h2>
+<p>When you're done running the script, prove you understand it by doing these:</p>
+
+<ol>
+  <li>Pull a single APK off the phone and run <code>apksigner verify --print-certs</code> on it directly. Confirm the SHA-256 you see matches what the script reported for that package.</li>
+  <li>Build a debug APK from any Android Studio project, install it on the phone, re-run the script, and confirm it lands in the <code>A6:64:9A:F7:D0:1A:E4:3F:...</code> "Android Debug" group.</li>
+  <li>Find an app on Play Store, install it on a friend's phone too, run the script on both phones, and confirm the SHA-256 fingerprint is identical. (Demonstrates: a fingerprint is tied to the developer, not the install.)</li>
+  <li>Take any Google app's fingerprint from your phone and look up the official Google fingerprint list — confirm it matches.</li>
+  <li>Bonus: write a one-line shell pipeline that prints just the package names that share <em>your</em> signing certificate, given that you know the SHA-256 of your debug keystore.</li>
+</ol>
+
+<footer>
+  <p class="meta">Course: Android Security · Day 2 · Developer Signature Drill. Scripts: <a href="GetPackages.ps1">GetPackages.ps1</a> (Windows) · <a href="find_apps_by_signature.sh">find_apps_by_signature.sh</a> (mac/Linux).</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

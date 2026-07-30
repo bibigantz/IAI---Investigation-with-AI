@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Android Security Course — Course Hub</title>
+<style>
+:root {
+  --fg:#1a1a1a; --muted:#555; --bg:#fafafa;
+  --accent:#1e6fce; --accent-soft:#e8f0fa;
+  --code-bg:#f4f4f4; --rule:#d8d8d8;
+  --day1:#5b8def; --day2:#2dba74; --day3:#e29632; --day4:#cf3a3a;
+}
+* { box-sizing: border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+       color:var(--fg); background:var(--bg);
+       max-width:1100px; margin:32px auto; padding:0 24px; line-height:1.55; }
+header { border-bottom:2px solid var(--accent); padding-bottom:12px; margin-bottom:24px; }
+h1 { font-size:32px; margin:0 0 6px; }
+header .lede { color:var(--muted); margin:0; }
+h2 { font-size:22px; margin:36px 0 4px; padding:6px 12px; color:#fff; border-radius:4px; }
+.day1 h2 { background:var(--day1); }
+.day2 h2 { background:var(--day2); }
+.day3 h2 { background:var(--day3); }
+.day4 h2 { background:var(--day4); }
+.section { background:#fff; border:1px solid var(--rule); border-radius:8px; padding:0 18px 14px;
+           margin-bottom:20px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+h3 { font-size:16px; margin:18px 0 8px; color:var(--accent); border-bottom:1px solid var(--rule); padding-bottom:4px; }
+ul { margin:6px 0 14px; padding-left:24px; }
+li { margin:4px 0; }
+a { color:var(--accent); text-decoration:none; }
+a:hover { text-decoration:underline; }
+.tag { display:inline-block; background:var(--accent-soft); color:var(--accent);
+       padding:1px 8px; border-radius:10px; font-size:0.78em; margin-left:6px; vertical-align:middle; }
+.apk-tag { background:#ffe8d4; color:#a35400; }
+.zip-tag { background:#e3f3e0; color:#2a7a23; }
+.pdf-tag { background:#fde2e2; color:#a32424; }
+.html-tag { background:#e0eaff; color:#1e4abf; }
+.md-tag { background:#e9e0ff; color:#5a26b3; }
+.skill-tag { background:#fff4cc; color:#8a6c00; }
+.muted { color:var(--muted); font-size:0.92em; }
+table { width:100%; border-collapse:collapse; margin:10px 0; font-size:0.94em; }
+th, td { border:1px solid var(--rule); padding:6px 10px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.tools-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-top:10px; }
+.tool { background:var(--accent-soft); padding:12px 14px; border-radius:6px; }
+.tool h4 { margin:0 0 6px; color:var(--accent); }
+.tool p { margin:4px 0; font-size:0.92em; }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule);
+         color:var(--muted); font-size:0.92em; text-align:center; }
+.brand-logo { height:48px; vertical-align:middle; margin-right:14px; }
+header.with-logo { display:flex; align-items:center; gap:18px; }
+header.with-logo .text { flex:1; }
+.footer-logo { height:32px; vertical-align:middle; opacity:0.75; margin-bottom:6px; }
+footer .copyright { display:block; margin-top:6px; }
+.notice { background:#fff8e0; border-left:4px solid #d4ad00; padding:10px 14px; border-radius:4px;
+          margin:12px 0; font-size:0.94em; }
+</style>
+</head>
+<body>
+
+<header class="with-logo">
+  <img src="syntax_logo.jpg" alt="Syntax College" class="brand-logo">
+  <div class="text">
+    <h1>Android Security Course — Course Hub</h1>
+    <p class="lede">Every file you need for the four-day Android Security course at Syntax College, organised by day. Open the slides to lecture, the PDFs for offline reading, the drills (HTML or markdown) for hands-on work, and the APK/source bundles for installation.</p>
+  </div>
+</header>
+
+<div class="notice">
+  <strong>Day-by-day plan:</strong>
+  Day 1 — Android OS Overview · Day 2 — Android Studio &amp; ADB · Day 3 — Android Application + Hidden Recognition (capstone) · Day 4 — Android Vulnerabilities + Network Security.
+  Full curriculum: <a href="Syllabus.html">Syllabus.html</a> <span class="tag html-tag">syllabus</span>.
+</div>
+
+<!-- ============================== DAY 1 ============================== -->
+<div class="day1">
+  <h2>Day 1 — Android OS Overview</h2>
+
+  <div class="section">
+    <h3>Lecture material</h3>
+    <ul>
+      <li><a href="Android OS Overview.pptx">Android OS Overview.pptx</a> <span class="tag">slides</span></li>
+      <li><a href="Android OS Overview.pdf">Android OS Overview.pdf</a> <span class="tag pdf-tag">pdf</span></li>
+    </ul>
+
+    <h3>Drills</h3>
+    <ul>
+      <li>
+        <strong>Service Call Drill</strong> — driving Android's binder services from <code>adb shell service call</code>: place a real phone call, send an SMS, open the notifications panel.
+        <br>
+        <a href="Service_Call_Drill.html">Service_Call_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="Service_Call_Solution.html">Service_Call_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+    </ul>
+
+    <h3>Skills covered</h3>
+    <p class="muted">
+      <span class="tag skill-tag">Service Manager</span>
+      <span class="tag skill-tag">AIDL → transaction codes</span>
+      <span class="tag skill-tag">Parcels</span>
+      <span class="tag skill-tag">SELinux contexts</span>
+      <span class="tag skill-tag">Process model</span>
+      <span class="tag skill-tag">Boot partition layout</span>
+    </p>
+  </div>
+</div>
+
+<!-- ============================== DAY 2 ============================== -->
+<div class="day2">
+  <h2>Day 2 — Android Studio &amp; Android Debug Bridge</h2>
+
+  <div class="section">
+    <h3>Lecture material</h3>
+    <ul>
+      <li><a href="Android Studio.pptx">Android Studio.pptx</a> <span class="tag">slides</span> · <a href="Android Studio.pdf">PDF</a> <span class="tag pdf-tag">pdf</span></li>
+      <li><a href="Android Debug Bridge.pptx">Android Debug Bridge.pptx</a> <span class="tag">slides</span> · <a href="Android Debug Bridge.pdf">PDF</a> <span class="tag pdf-tag">pdf</span></li>
+    </ul>
+
+    <h3>Drills</h3>
+    <ul>
+      <li>
+        <strong>Developer Signature Drill</strong> — pull every APK off the phone, group by SHA-256 of the signing certificate, identify which apps share a developer.
+        <br>
+        <a href="Developer_Signature_Drill.html">Developer_Signature_Drill.html</a> <span class="tag html-tag">walkthrough</span>
+        &nbsp;·&nbsp;
+        Tools: <a href="GetPackages.ps1">GetPackages.ps1</a> (Windows) · <a href="find_apps_by_signature.sh">find_apps_by_signature.sh</a> (mac/Linux)
+      </li>
+      <li>
+        <strong>ADB Drill</strong> — drive the phone from your laptop. Open camera/maps/dialer/SMS via implicit intents; observe RAM lifecycle of a foreground service.
+        <br>
+        <a href="ADB_Drill.html">ADB_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="ADB_Solution.html">ADB_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+    </ul>
+
+    <h3>App bundles used in Day 2</h3>
+    <table>
+      <tr><th>Project</th><th>Source</th><th>APK</th></tr>
+      <tr><td>AdbTraining (lab app for the ADB drill)</td><td><a href="AdbTraining.zip">AdbTraining.zip</a> <span class="tag zip-tag">zip</span></td><td><a href="app-debug.apk">app-debug.apk</a> <span class="tag apk-tag">apk</span> · <a href="app-debug-target-25.apk">target-25 build</a> <span class="tag apk-tag">apk</span></td></tr>
+      <tr><td>NormalApp / AbnormalApp (signature comparison)</td><td><a href="NormalApp.zip">NormalApp.zip</a> · <a href="AbnormalApp.zip">AbnormalApp.zip</a></td><td><a href="normal_app.apk">normal_app.apk</a> · <a href="abnormal_app.apk">abnormal_app.apk</a></td></tr>
+      <tr><td>OutdatedTargetSDKAPP</td><td><a href="OutdatedTargetSDKAPP.zip">OutdatedTargetSDKAPP.zip</a></td><td><a href="app-outdated.apk">app-outdated.apk</a></td></tr>
+    </table>
+
+    <h3>Skills covered</h3>
+    <p class="muted">
+      <span class="tag skill-tag">am start / am broadcast / am force-stop</span>
+      <span class="tag skill-tag">pm install / pm grant / pm path</span>
+      <span class="tag skill-tag">dumpsys meminfo</span>
+      <span class="tag skill-tag">apksigner</span>
+      <span class="tag skill-tag">SHA-256 cert grouping</span>
+      <span class="tag skill-tag">Foreground services</span>
+    </p>
+  </div>
+</div>
+
+<!-- ============================== DAY 3 ============================== -->
+<div class="day3">
+  <h2>Day 3 — Android Application + Hidden Recognition Capstone</h2>
+
+  <div class="section">
+    <h3>Lecture material</h3>
+    <ul>
+      <li><a href="Android Application.pptx">Android Application.pptx</a> <span class="tag">slides</span> · <a href="Android Application.pdf">PDF</a> <span class="tag pdf-tag">pdf</span></li>
+      <li><a href="Hidden Recognition App.pptx">Hidden Recognition App.pptx</a> <span class="tag">capstone slides</span> · <a href="Hidden Recognition App.pdf">PDF</a> <span class="tag pdf-tag">pdf</span></li>
+    </ul>
+
+    <h3>Drills</h3>
+    <ul>
+      <li>
+        <strong>SMS Receiver Drill</strong> — read a malicious manifest. Static receiver + max-priority intent filter + RECEIVE_SMS/SEND_SMS = an SMS-relay backdoor in 30 lines of XML.
+        <br>
+        <a href="SmsReceiver_Drill.html">SmsReceiver_Drill.html</a> <span class="tag html-tag">walkthrough</span>
+      </li>
+      <li>
+        <strong>Deep Link Drill</strong> — custom URI schemes that send SMS without a confirmation dialog.
+        <br>
+        <a href="DeepLink_Drill.html">DeepLink_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="DeepLink_Solution.html">DeepLink_Solution.html</a> <span class="tag html-tag">solution</span>
+        &nbsp;·&nbsp;
+        <a href="test.html">test.html</a> <span class="tag html-tag">helper</span>
+      </li>
+      <li>
+        <strong>Location Drill</strong> — install, grant, run, and restart-from-idle a location service entirely through ADB.
+        <br>
+        <a href="Location_Drill.html">Location_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="Location_Solution.html">Location_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+      <li>
+        <strong>Storage Drill</strong> — three storage zones (internal, private external, shared external) and how to exfiltrate from each.
+        <br>
+        <a href="Storage_Drill.html">Storage_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="Storage_Solution.html">Storage_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+      <li>
+        <strong>Hidden Recognition App — Capstone</strong> — a benign-looking questionnaire app composed entirely of legitimate APIs that records audio, transcribes it, sends it to Firebase, and survives reboots.
+        <br>
+        <a href="Hidden_Recognition_Drill.html">Hidden_Recognition_Drill.html</a> <span class="tag html-tag">capstone</span>
+        &nbsp;·&nbsp;
+        <a href="Hidden_Recognition_Solution.html">Hidden_Recognition_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+    </ul>
+
+    <h3>App bundles used in Day 3</h3>
+    <table>
+      <tr><th>Project</th><th>Source</th><th>APK</th></tr>
+      <tr><td>DeepLinkApp</td><td><a href="DeepLinkApp.zip">DeepLinkApp.zip</a></td><td><a href="deep_link_app.apk">deep_link_app.apk</a></td></tr>
+      <tr><td>LocationUpdates</td><td><a href="LocationUpdates.zip">LocationUpdates.zip</a></td><td><a href="app-location.apk">app-location.apk</a></td></tr>
+      <tr><td>StorageExample</td><td><a href="StorageExample.zip">StorageExample.zip</a></td><td><a href="app-storage.apk">app-storage.apk</a></td></tr>
+      <tr><td>QuestionaireApp (Hidden Recognition)</td><td><a href="QuestionaireApp.zip">QuestionaireApp.zip</a></td><td><a href="questionnaire.apk">questionnaire.apk</a></td></tr>
+      <tr><td>SmsReceiver / SmsBackdoor</td><td><a href="SmsReceiver.zip">SmsReceiver.zip</a> · <a href="SMS BackdoorNetwork.zip">SMS BackdoorNetwork.zip</a></td><td><a href="sms-receiver.apk">sms-receiver.apk</a></td></tr>
+      <tr><td>NonContactsWhatsApp</td><td><a href="NonContactsWhatsApp.zip">NonContactsWhatsApp.zip</a></td><td><a href="non_contacts_whatsapp.apk">non_contacts_whatsapp.apk</a></td></tr>
+    </table>
+
+    <h3>Skills covered</h3>
+    <p class="muted">
+      <span class="tag skill-tag">Custom URI schemes</span>
+      <span class="tag skill-tag">Intent filters</span>
+      <span class="tag skill-tag">Runtime permissions</span>
+      <span class="tag skill-tag">Foreground service types</span>
+      <span class="tag skill-tag">BroadcastReceivers (static vs dynamic)</span>
+      <span class="tag skill-tag">Scoped storage</span>
+      <span class="tag skill-tag">run-as</span>
+      <span class="tag skill-tag">FileProvider vs file:// URIs</span>
+      <span class="tag skill-tag">BOOT_COMPLETED persistence</span>
+    </p>
+  </div>
+</div>
+
+<!-- ============================== DAY 4 ============================== -->
+<div class="day4">
+  <h2>Day 4 — Android Vulnerabilities + Network Security</h2>
+
+  <div class="section">
+    <h3>Lecture material</h3>
+    <ul>
+      <li><a href="Android Vulnerabilities.pptx">Android Vulnerabilities.pptx</a> <span class="tag">slides</span> · <a href="Android Vulnerabilities.pdf">PDF</a> <span class="tag pdf-tag">pdf</span></li>
+      <li><a href="Network Security.pptx">Network Security.pptx</a> <span class="tag">slides</span> · <a href="Network Security.pdf">PDF</a> <span class="tag pdf-tag">pdf</span></li>
+    </ul>
+
+    <h3>Drills</h3>
+    <ul>
+      <li>
+        <strong>Dynamic Code Loading Drill</strong> — JAR → DEX with <code>d8</code>, fetch at runtime, load through <code>DexClassLoader</code>, verify SHA-256.
+        <br>
+        <a href="Dynamic_Code_Loading_Drill.html">Dynamic_Code_Loading_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="Dynamic_Code_Loading_Solution.html">Dynamic_Code_Loading_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+      <li>
+        <strong>Hard-Coded Native App Drill</strong> — find four secrets (Base64+XOR, ROT13, hex, RC4) using JADX, Ghidra, and CyberChef.
+        <br>
+        <a href="Hard_Coded_Native_Drill.html">Hard_Coded_Native_Drill.html</a> <span class="tag html-tag">drill</span>
+        &nbsp;·&nbsp;
+        <a href="Hard_Coded_Native_Solution.html">Hard_Coded_Native_Solution.html</a> <span class="tag html-tag">solution</span>
+      </li>
+      <li>
+        <strong>MITM Drill</strong> — full nine-phase walkthrough: Burp setup, CA install, Authorization-header capture, SPKI pinning, confirm pinning blocks Burp.
+        <br>
+        <a href="MITM_Drill.html">MITM_Drill.html</a> <span class="tag html-tag">walkthrough</span>
+      </li>
+    </ul>
+
+    <h3>App bundles used in Day 4</h3>
+    <table>
+      <tr><th>Project</th><th>Source</th><th>APK(s)</th></tr>
+      <tr><td>DynamicCodeLoader</td><td><a href="DynamicCodeLoader.zip">DynamicCodeLoader.zip</a></td><td><a href="dynamic_code_loader.apk">dynamic_code_loader.apk</a></td></tr>
+      <tr><td>HardCodedNativeApp</td><td><a href="HardCodedNativeApp.zip">HardCodedNativeApp.zip</a></td><td><a href="hard_coded_app.apk">hard_coded_app.apk</a></td></tr>
+      <tr><td>ProGuardExample (minified vs unminified)</td><td><a href="ProGuardExample.zip">ProGuardExample.zip</a></td><td><a href="app_release_proguard.apk">with proguard</a> · <a href="app_release_no_proguard.apk">without</a></td></tr>
+      <tr><td>NetworkTraffic (MITM drill target)</td><td><a href="NetworkTraffic.zip">NetworkTraffic.zip</a></td><td><a href="network-traffic.apk">network-traffic.apk</a> · <a href="network-traffic-pinned.apk">network-traffic-pinned.apk</a></td></tr>
+    </table>
+
+    <h3>Skills covered</h3>
+    <p class="muted">
+      <span class="tag skill-tag">JADX</span>
+      <span class="tag skill-tag">Ghidra</span>
+      <span class="tag skill-tag">apktool</span>
+      <span class="tag skill-tag">d8 (jar→dex)</span>
+      <span class="tag skill-tag">DexClassLoader</span>
+      <span class="tag skill-tag">RC4 / XOR / Base64 / ROT13</span>
+      <span class="tag skill-tag">CyberChef recipes</span>
+      <span class="tag skill-tag">ProGuard / R8</span>
+      <span class="tag skill-tag">Burp Suite as MITM proxy</span>
+      <span class="tag skill-tag">SPKI certificate pinning</span>
+    </p>
+  </div>
+</div>
+
+<!-- ============================== TOOLS ============================== -->
+<h2 style="background:#444">Tools, scripts, course documents</h2>
+<div class="section">
+  <div class="tools-grid">
+    <div class="tool">
+      <h4>JADX (decompiler)</h4>
+      <p>Pre-installed on each lab PC by the college. Open from the Start menu (search "jadx"). Drag any APK onto the window — decodes Java/Kotlin and the manifest into readable form.</p>
+    </div>
+    <div class="tool">
+      <h4>Ghidra (native RE)</h4>
+      <p>Pre-installed on each lab PC by the college. Open from the Start menu (search "ghidra") or run <code>ghidraRun.bat</code> from its install folder. Used in the hard-coded native drill for <code>.so</code> analysis.</p>
+    </div>
+    <div class="tool">
+      <h4>apktool</h4>
+      <p>Pre-installed on each lab PC by the college. Run from any terminal: <code>apktool d &lt;apk&gt; -o &lt;outdir&gt;</code> unpacks an APK into smali + resources + manifest.</p>
+    </div>
+    <div class="tool">
+      <h4>dex-tools</h4>
+      <p><code>dex-tools-v2.4/</code>. Convert DEX ↔ JAR for Java tooling: <code>d2j-dex2jar.bat</code> / <code>d2j-jar2dex.bat</code>.</p>
+    </div>
+    <div class="tool">
+      <h4>find_apps_by_signature.sh</h4>
+      <p>macOS/Linux script that pulls every APK off the device and groups by signing-cert SHA-256. See <a href="Developer_Signature_Drill.html">drill walkthrough</a>.</p>
+    </div>
+    <div class="tool">
+      <h4>GetPackages.ps1</h4>
+      <p>Windows PowerShell equivalent. Auto-detects JAVA_HOME / adb / latest apksigner. Handles build-tools 37+ output format.</p>
+    </div>
+    <div class="tool">
+      <h4>CyberChef (browser)</h4>
+      <p>Open <a href="https://gchq.github.io/CyberChef/" target="_blank">gchq.github.io/CyberChef</a> in any browser. No install. Used heavily in the hard-coded native drill.</p>
+    </div>
+    <div class="tool">
+      <h4>Burp Suite Community</h4>
+      <p>Download from <a href="https://portswigger.net/burp/communitydownload" target="_blank">portswigger.net</a>. Used for the MITM drill (Day 4).</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============================== ADMIN ============================== -->
+<h2 style="background:#cf3a3a">For the IT administrator</h2>
+<div class="section">
+  <p><strong><a href="Software_Requirements.html">Software Requirements &amp; Installation Guide</a></strong> <span class="tag html-tag">page</span></p>
+  <p class="muted">A Windows-targeted, step-by-step guide listing every piece of software the course needs, with download links, install steps, environment-variable settings, firewall rules, phone-side configuration, and a final verification checklist. Hand this to whoever images the lab PCs.</p>
+</div>
+
+<footer>
+  <img src="syntax_logo.jpg" alt="Syntax College" class="footer-logo"><br>
+  Android Security Course · All drills and slide-references taken verbatim from the lecture decks.
+  <span class="copyright">&copy; 2025–2026 Eran Katsav &amp; Syntax College. All rights reserved.</span>
+</footer>
+
+</body>
+</html>

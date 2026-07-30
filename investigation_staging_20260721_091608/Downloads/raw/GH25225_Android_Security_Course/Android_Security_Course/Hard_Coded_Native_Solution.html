@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hard-Coded Native App — Solution — Day 4</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; width:100%; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.solution { background:var(--solution-bg); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--solution-border); }
+.solution h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Hard-Coded Native App — Worked Solutions</h1>
+<p class="lede">All recipes, inputs, and outputs are taken verbatim from slides 23, 24, 25, 26 of <em>Android Vulnerabilities.pptx</em>.</p>
+
+<h2>Master table — all four secrets</h2>
+
+<table>
+<tr><th>#</th><th>Where</th><th>Encoding</th><th>Input (in APK)</th><th>CyberChef recipe</th><th>Plaintext</th></tr>
+<tr><td>1</td><td><code>MainActivity.kt</code> — <code>ENCRYPTED_STRING_1</code></td><td>Base64 + XOR</td><td><code>CCZuCSI3I2kdIS43Iz09</code></td><td>From Base64 → XOR with key <code>FINDME</code> (UTF-8)</td><td><code>No More Secrets</code></td></tr>
+<tr><td>2</td><td>Native .so string</td><td>ROT13</td><td><code>Gur gehgu vf bhg gurer</code></td><td>ROT13</td><td><code>The truth is out there</code></td></tr>
+<tr><td>3</td><td>Native .so string</td><td>Hex</td><td><code>4150496b65793a533363726574504073737730726421</code></td><td>From Hex</td><td><code>APIkey:S3cretP@ssw0rd!</code></td></tr>
+<tr><td>4</td><td>Native .so byte array</td><td>Hex + RC4</td><td><code>0xb7,0x04,0xe6,0x8b,0x11,0xa8,0xdc,0x28,0x7f,0xc0,0xd4,0x79,0x4b,0x10,0xa8,0x27</code></td><td>From Hex → RC4 with key <code>hacktheplanet</code></td><td><code>No Where To Hide</code></td></tr>
+</table>
+
+<h2>Detailed walkthrough — Encryption #1 (slide 23)</h2>
+
+<div class="solution">
+<p><strong>How to find it:</strong> open <code>hard_coded_app.apk</code> in JADX-GUI, navigate to <code>com.example.hardcodednativeapp.MainActivity</code>, scroll to the companion object at the top of the class. The constant is named <code>ENCRYPTED_STRING_1</code>.</p>
+
+<p><strong>How to decrypt:</strong> open CyberChef. Paste <code>CCZuCSI3I2kdIS43Iz09</code> into Input. Drag "From Base64" into the Recipe panel; then drag "XOR" below it. In the XOR step, set Key = <code>FINDME</code>, Key format = UTF8. Output reads <code>No More Secrets</code>.</p>
+</div>
+
+<h3>Why this order — and what happens if you reverse it</h3>
+
+<p>The encoder did <code>Base64(XOR(plaintext, key))</code>. The decoder must therefore unwrap from outside in: Base64-decode first to recover the XOR'd bytes, then XOR with the same key to recover the plaintext.</p>
+
+<p>If you reverse the steps in CyberChef and "XOR with FINDME" first, the XOR operates on the Base64 <em>characters</em>, not the underlying bytes. You'd get garbage that's not even valid Base64 anymore. CyberChef won't refuse — it'll just hand you nonsense.</p>
+
+<h2>Detailed walkthrough — Encryptions #2 and #3 (slides 24, 25)</h2>
+
+<div class="solution">
+<p><strong>How to find them:</strong> extract the native library from the APK first.</p>
+<pre><code># slide 18 notes:
+apktool d hard_coded_app.apk -o unpackapk
+ls unpackapk/lib/arm64-v8a/
+# libhardcodednativeapp.so</code></pre>
+<p>Or simply unzip the APK with any tool — APKs are ZIP files — and pull out <code>lib/arm64-v8a/libhardcodednativeapp.so</code>.</p>
+
+<p>Open Ghidra: File → New Project → Import File → pick the <code>.so</code> → "Yes, analyze". Once analysis finishes, Window → Defined Strings.</p>
+
+<p>Scroll the strings list:</p>
+<ul>
+  <li>Strings that look like mangled English (every letter shifted) — <strong>Encryption #2</strong>.</li>
+  <li>Long even-length hexadecimal strings — <strong>Encryption #3</strong>.</li>
+</ul>
+
+<p><strong>Decrypt #2 in CyberChef:</strong> paste <code>Gur gehgu vf bhg gurer</code>, recipe = ROT13, output = <code>The truth is out there</code>.</p>
+
+<p><strong>Decrypt #3 in CyberChef:</strong> paste <code>4150496b65793a533363726574504073737730726421</code>, recipe = From Hex, output = <code>APIkey:S3cretP@ssw0rd!</code>.</p>
+</div>
+
+<h2>Detailed walkthrough — Encryption #4 (slide 26)</h2>
+
+<div class="solution">
+<p><strong>How to find it:</strong> in Ghidra, look for the function (often named with a <code>Java_</code> prefix) that returns a string but doesn't directly reference a string constant. Inside its body you'll see:</p>
+<ul>
+  <li>A 256-byte array being initialised in a loop (the RC4 S-box, slide 20 hint).</li>
+  <li>A nearby string constant <code>hacktheplanet</code> — the RC4 key.</li>
+  <li>A second array of bytes: <code>0xb7, 0x04, 0xe6, 0x8b, ...</code> (slide 17 reminder: native code stores these in reverse on little-endian platforms; mentally reverse if the disassembly shows them as one 32-bit constant <code>0x8be604b7</code>).</li>
+</ul>
+
+<p><strong>Decrypt in CyberChef:</strong> paste the byte sequence <em>without</em> the <code>0x</code> prefixes (CyberChef's "From Hex" handles either, but pure hex is more reliable). Recipe = From Hex → RC4 (key = <code>hacktheplanet</code>, key format = UTF8). Output = <code>No Where To Hide</code>.</p>
+</div>
+
+<h3>RC4 telltale signs in disassembly</h3>
+
+<table>
+<tr><th>Signature</th><th>What it looks like</th></tr>
+<tr><td>S-box init</td><td><code>for (i = 0; i &lt; 256; i++) S[i] = i;</code> — a tight loop with index 0..255 writing into a 256-byte buffer.</td></tr>
+<tr><td>Key schedule</td><td><code>j = (j + S[i] + key[i % keylen]) &amp; 0xff;</code> followed by a swap. The <code>and 0xff</code> is the modulo-256 wrap that the slide flags as the giveaway.</td></tr>
+<tr><td>Byte stream loop</td><td>A second loop that XORs each ciphertext byte with <code>S[(S[i]+S[j]) &amp; 0xff]</code>. Same <code>and 0xff</code> pattern.</td></tr>
+</table>
+
+<h2>Reflection answers</h2>
+
+<p><strong>Q1 — Rank the four hiding methods, weakest to strongest:</strong></p>
+<ol>
+  <li><strong>Hex (Encryption #3)</strong> — long hex strings stand out in any <code>strings</code> dump and decode with one CyberChef step. Trivially detectable, trivially reversible. The <em>weakest</em>.</li>
+  <li><strong>ROT13 (Encryption #2)</strong> — also visible to any strings dump, but at least requires recognising the encoding. Trivially reversible once recognised, and "looks like ROT13" is a recognisable pattern any analyst learns in the first hour.</li>
+  <li><strong>Base64 + XOR (Encryption #1)</strong> — slightly stronger because the XOR step requires recovering a key. But the key is in the same source file, retrievable by anyone who can decompile Kotlin. Effective only against an attacker who runs <code>strings</code> and stops there.</li>
+  <li><strong>Hex byte array + RC4 in native code (Encryption #4)</strong> — the <em>strongest</em> of the four because the key and the algorithm both live in machine code that requires Ghidra (or comparable) to read. An automated <code>strings</code>-only scan won't find a usable plaintext at all. But it's still defeated by a competent reverse engineer in under an hour.</li>
+</ol>
+
+<p><strong>Q2 — Native libraries: two reasons they're better, one reason they're not:</strong></p>
+<ul>
+  <li><strong>Better #1:</strong> not decompiled by JADX. JADX handles DEX/Java only; <code>.so</code> files are opaque to it. An attacker has to add Ghidra (or IDA/Hopper/Binary Ninja) to their toolchain.</li>
+  <li><strong>Better #2:</strong> compiled native code carries no symbol names for local variables or parameters; ProGuard's name obfuscation is irrelevant because there's nothing to name. The structural information (control flow, function calls) survives but is harder to follow than Java.</li>
+  <li><strong>Not as good as it sounds:</strong> a determined attacker uses Ghidra for free, the analysis is the same flavour they'd do on any iOS app or Windows binary, and the <em>secret itself</em> is still in the binary. Native-code obfuscation buys time, not safety. And critically: any string constant — even in a <code>.so</code> — appears in a flat <code>strings</code> dump unless you split it across multiple constants and recombine at runtime.</li>
+</ul>
+
+<p><strong>Q3 — How to ship an API key without hiding it in the binary:</strong></p>
+<ol>
+  <li>Don't ship the API key. Ship instead an authenticated session your <em>own</em> server creates, scoped per-user.</li>
+  <li>Your server holds the third-party API key. Your app talks only to your server; your server forwards (with the third-party key) to the third party.</li>
+  <li>Authenticate the user-to-your-server connection however your app already does (Firebase auth, OAuth, etc.).</li>
+  <li>Rate-limit aggressively per user account so even if a user reverse-engineers their own session token, they can't burn your third-party quota.</li>
+</ol>
+<p>Cost: an extra hop per API call, an extra service to maintain. Benefit: the third-party key never leaves your infrastructure. There is no way to extract it from an APK that doesn't contain it. This is the only architectural pattern that actually defeats the "an attacker has the binary" attacker model — every other approach is friction, not protection.</p>
+
+<footer>
+  <p>Back to the drill: <a href="Hard_Coded_Native_Drill.html">Hard_Coded_Native_Drill.html</a></p>
+  <p class="meta">Course: Android Security · Day 4 · Hard-coded native app solution.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

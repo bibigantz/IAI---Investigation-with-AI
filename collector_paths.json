@@ -1,0 +1,80 @@
+{
+  "Registry": [
+    "Windows\\System32\\config\\SYSTEM",
+    "Windows\\System32\\config\\SOFTWARE",
+    "Windows\\System32\\config\\SAM",
+    "Windows\\System32\\config\\SECURITY",
+    "Users\\*\\NTUSER.DAT",
+    "Users\\*\\AppData\\Local\\Microsoft\\Windows\\UsrClass.dat"
+  ],
+  "Prefetch": [
+    "Windows\\Prefetch\\*.pf"
+  ],
+  "Amcache": [
+    "Windows\\AppCompat\\Programs\\Amcache.hve"
+  ],
+  "Logs": [
+    "Windows\\System32\\winevt\\Logs\\System.evtx",
+    "Windows\\System32\\winevt\\Logs\\Security.evtx",
+    "Windows\\System32\\winevt\\Logs\\Application.evtx",
+    "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-Sysmon%4Operational.evtx",
+    "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-PowerShell%4Operational.evtx",
+    "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TaskScheduler%4Operational.evtx",
+    "Windows\\System32\\winevt\\Logs\\Microsoft-Windows-TerminalServices-LocalSessionManager%4Operational.evtx"
+  ],
+  "Thumbcache": [
+    "Users\\*\\AppData\\Local\\Microsoft\\Windows\\Explorer\\thumbcache_*.db"
+  ],
+  "JumpLists": [
+    "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\AutomaticDestinations\\*",
+    "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\CustomDestinations\\*"
+  ],
+  "RecycleBin": [
+    "$Recycle.Bin\\*\\$I*",
+    "$Recycle.Bin\\*\\$R*"
+  ],
+  "SRUM": [
+    "Windows\\System32\\sru\\SRUDB.dat",
+    "Windows\\System32\\sru\\*.log"
+  ],
+  "PowerShellHistory": [
+    "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt"
+  ],
+  "Downloads": [
+    "Users\\*\\Downloads\\*"
+  ],
+  "TempFolder": [
+    "Windows\\Temp\\*",
+    "Users\\*\\AppData\\Local\\Temp\\*"
+  ],
+  "Shortcuts": [
+    "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Recent\\*.lnk",
+    "Users\\*\\Desktop\\*.lnk"
+  ],
+  "ScheduledTasks": [
+    "Windows\\System32\\Tasks\\*"
+  ],
+  "StartupFolders": [
+    "Users\\*\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\*",
+    "ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp\\*"
+  ],
+  "BrowserHistory": [
+    "Users\\*\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\History",
+    "Users\\*\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\History",
+    "Users\\*\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\*\\places.sqlite"
+  ],
+  "WindowsErrorReporting": [
+    "ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\*",
+    "Users\\*\\AppData\\Local\\Microsoft\\Windows\\WER\\ReportArchive\\*"
+  ],
+  "SetupAPILogs": [
+    "Windows\\inf\\setupapi.dev.log",
+    "Windows\\inf\\setupapi.app.log"
+  ],
+  "HostsFile": [
+    "Windows\\System32\\drivers\\etc\\hosts"
+  ],
+  "RDPCache": [
+    "Users\\*\\AppData\\Local\\Microsoft\\Terminal Server Client\\Cache\\*"
+  ]
+}

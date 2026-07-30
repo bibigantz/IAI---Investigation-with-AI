@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- SETUP HUB: Visible when IDLE -->
+<div id="setup-hub" class="glass-card" style="margin-bottom: 2rem; display: block;">
+    <div class="card-header">
+        <div class="card-title">🚀 Launch Hub: Start or Resume Investigation</div>
+        <div style="font-size:0.85rem; color:var(--text-muted);">IAI (Investigate with AI) Swarm Setup</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1rem;">
+        <!-- Option 1: Start New Investigation -->
+        <div class="glass-card" style="background: rgba(10, 13, 22, 0.4); margin-bottom: 0;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+                ⚡ New Investigation
+            </h3>
+
+            <div class="form-group">
+                <label class="form-label">Connected Target Drive</label>
+                <select id="drive-selector" class="form-input">
+                    <!-- Loaded dynamically -->
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Investigation Scope Filter</label>
+                <select id="scope-selector" class="form-input" onchange="onScopeChange()">
+                    <option value="ALL">Full System Analysis (All Tiers)</option>
+                    <option value="WINDOWS">Windows Forensics Only</option>
+                    <option value="FILE">File / Malware Analysis Only</option>
+                    <option value="MEMORY">Volatility Memory Analysis Only</option>
+                </select>
+            </div>
+
+            <!-- File/Malware Upload Area (visible for ALL and FILE scopes) -->
+            <div id="file-upload-area" class="form-group" style="margin-top: 1rem;">
+                <label class="form-label">Attach File/Malware Targets (.exe, .dll, .sys, .zip)</label>
+                <input type="file" id="file-uploader" class="form-input" style="padding:0.4rem;" multiple accept=".exe,.dll,.sys,.zip,.rar,.7z">
+                <div style="font-size:0.72rem; color:var(--accent-yellow); margin-top:0.25rem;">ZIP files with password "infected" will be auto-extracted</div>
+            </div>
+
+            <!-- Memory Dump Upload Area (visible for ALL and MEMORY scopes) -->
+            <div id="memory-upload-area" class="form-group">
+                <label class="form-label">Attach Memory Dump Targets (.raw, .dmp, .vmem)</label>
+                <input type="file" id="memory-uploader" class="form-input" style="padding:0.4rem;" multiple accept=".raw,.dmp,.vmem,.mem,.lime">
+            </div>
+
+            <!-- Event Context Brief Area (visible for all scopes) -->
+            <div class="form-group" style="margin-top: 1.25rem;">
+                <label class="form-label">📝 Incident Context Brief (event_context.txt)</label>
+                <textarea id="setup-case-context" class="form-textarea" rows="4" placeholder="Enter incident brief, what happened, systems involved, or malicious keywords to search for..."></textarea>
+            </div>
+
+            <!-- Deep File Extractor Area (visible for ALL and FILE scopes) -->
+            <div id="extractor-upload-area" class="form-group" style="margin-top: 1rem; padding: 0.75rem; background: rgba(157, 78, 221, 0.08); border: 1px solid rgba(157, 78, 221, 0.25); border-radius: 8px;">
+                <label class="form-label" style="color: var(--accent-purple);">🔬 Deep File Extraction (File_Extractor)</label>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem;">Upload suspect files to extract and stage for deep analysis. Files are extracted into the investigation's Extracted_Files folder and automatically analyzed by the File Analysis pipeline. ZIP archives with password "infected" are auto-extracted.</div>
+                <input type="file" id="extractor-uploader" class="form-input" style="padding:0.4rem;" multiple accept=".exe,.dll,.sys,.zip,.rar,.7z,.bin,.dat">
+            </div>
+
+            <button class="btn btn-primary" style="width: 100%; margin-top: 1rem; justify-content: center;" onclick="launchNewSwarm()">
+                ⚡ Launch AI Swarm Pipeline
+            </button>
+        </div>
+
+        <!-- Option 2: Choose Existing Investigation Staging Session -->
+        <div class="glass-card" style="background: rgba(10, 13, 22, 0.4); margin-bottom: 0; display: flex; flex-direction: column;">
+            <h3 style="font-size:1.05rem; color:var(--accent-cyan); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem;">
+                📁 Existing Staging Sessions
+            </h3>
+
+            <div style="flex: 1; overflow-y: auto; max-height: 380px; margin-bottom: 1rem;" id="existing-sessions-list">
+                <!-- Loaded dynamically -->
+            </div>
+
+            <div class="form-group" style="margin-top: auto;">
+                <label class="form-label">📝 Incident Context Brief (For Selected Session)</label>
+                <textarea id="existing-case-context" class="form-textarea" rows="3" placeholder="Ingest or edit event context brief for this session..."></textarea>
+            </div>
+
+            <button class="btn btn-outline" style="width: 100%; margin-top: 1rem; justify-content: center;" onclick="resumeExistingStaging()">
+                📁 Resume Selected Staging Session
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ACTIVE DASHBOARD: Visible when RUNNING, PAUSED or COMPLETED -->
+<div id="active-dashboard" style="display: none;">
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-label">Pipeline Status</div>
+            <div class="metric-value" id="kpi-pipeline" style="color: var(--accent-cyan);">IDLE</div>
+            <div class="metric-sub" id="kpi-investigation">No Active Investigation</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Execution Mode</div>
+            <div class="metric-value" id="kpi-mode" style="color: var(--accent-yellow);">SUPERVISED</div>
+            <div class="metric-sub">Human-In-The-Loop Active</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Pending HITL Approvals</div>
+            <div class="metric-value" id="kpi-pending" style="color: var(--accent-yellow);">0</div>
+            <div class="metric-sub">Paused Sub-Agents</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Total Swarm Nodes</div>
+            <div class="metric-value" id="kpi-nodes" style="color: var(--accent-green);">25</div>
+            <div class="metric-sub">Registered Swarm Agents</div>
+        </div>
+    </div>
+
+    <!-- PIPELINE STEERING CONTROLS -->
+    <div class="glass-card" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div style="display: flex; gap: 1rem;">
+            <button class="btn btn-warning" id="btn-pause-pipeline" onclick="pausePipeline()">
+                ⏸️ Pause Investigation
+            </button>
+            <button class="btn btn-success" id="btn-resume-pipeline" style="display: none;" onclick="resumePipeline()">
+                ▶️ Resume Investigation
+            </button>
+            <button class="btn btn-outline" onclick="stopPipeline()">
+                🛑 Stop Swarm
+            </button>
+            <button class="btn btn-outline" onclick="returnToHub()" style="border-color: var(--accent-purple); color: var(--accent-purple);">
+                🏠 Return to Launch Hub
+            </button>
+        </div>
+
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <span style="font-size:0.85rem; color:var(--text-muted);">Quick Context Injection:</span>
+            <input type="text" id="active-quick-context" class="form-input" style="width: 320px; padding: 0.5rem;" placeholder="Inject new keywords or threat context...">
+            <button class="btn btn-primary" onclick="injectQuickContext()">Update Context</button>
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <div class="card-header">
+            <div class="card-title">📡 Live Investigation Log Stream</div>
+            <button class="btn btn-outline" style="padding: 0.3rem 0.8rem; font-size:0.8rem;" onclick="clearLogs()">
+                Clear Console
+            </button>
+        </div>
+
+        <div class="terminal-box" id="terminal-stream">
+            <!-- Logs loaded here -->
+        </div>
+    </div>
+</div>
+{% endblock %}

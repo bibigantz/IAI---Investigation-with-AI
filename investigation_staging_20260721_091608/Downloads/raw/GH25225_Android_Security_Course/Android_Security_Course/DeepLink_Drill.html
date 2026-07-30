@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deep Link Drill — Day 3 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+details { margin:10px 0; padding:8px 14px; background:var(--hint-bg); border-left:3px solid var(--hint-border); border-radius:3px; }
+details > summary { cursor:pointer; font-weight:600; color:var(--hint-border); }
+details[open] > summary { margin-bottom:8px; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+.meta { color:var(--muted); font-size:0.92em; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.exercise { background:var(--accent-soft); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--accent); }
+.exercise h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Deep Link Drill — Custom URI schemes can send your SMS</h1>
+<p class="lede">A "deep link" is just a URL the app's manifest claims it can handle. When the user taps a link with that scheme, Android resolves the matching app and hands it the URL — including any data sitting in the path or query. This drill shows how a malicious app can use an innocent-looking deep link to fire off SMS messages on the user's behalf.</p>
+
+<h2>What you'll learn</h2>
+<ul>
+  <li>How <code>intent-filter</code>s in the manifest declare which URLs an app responds to.</li>
+  <li>Why custom schemes (<code>smssender://</code>) aren't owned by anyone — multiple apps can claim them.</li>
+  <li>How an app holding <code>SEND_SMS</code> can be wired to send a message just because the user clicked an HTML link.</li>
+  <li>How to reproduce the same behaviour from <code>adb shell am start</code> without any HTML at all.</li>
+</ul>
+
+<h2>1. Background — what is a deep link?</h2>
+
+<p>An ordinary HTTP URL points to a web page. A <strong>deep link</strong> uses a URI scheme that one or more native apps register for — instead of opening a browser, Android dispatches the URL to the app whose <code>intent-filter</code> matches. The receiving Activity gets the URL via <code>getIntent().getData()</code> and parses out the bits it cares about (numbers in the path, fields in the query, etc.).</p>
+
+<p>The trust model: Android assumes that <em>opening a URL is a safe operation</em>. The browser and the OS shell follow that assumption; they tap-to-open without confirming. So if the app on the receiving end of the deep link does something dangerous with the URL contents — like sending SMS — the dangerous thing happens silently the moment the user taps the link.</p>
+
+<h2>2. The DeepLinkApp's manifest contract</h2>
+
+<p>The app you're about to install declares an intent filter for the custom scheme <code>smssender://</code>. The URL format the slide shows is:</p>
+
+<pre><code>smssender://send?data=&lt;phone-number&gt;:&lt;url-encoded-message&gt;</code></pre>
+
+<p>When the app receives such a URL, it parses out the number and message and calls <code>SmsManager.sendTextMessage(...)</code>. The app holds <code>SEND_SMS</code>; the OS does not prompt because the permission was granted at install time via <code>-g</code>.</p>
+
+<div class="warn">
+  <strong>Install gotcha.</strong> Samsung Knox / Play Protect blocks the install of any APK requesting <code>SEND_SMS</code> from a non-Play-Store source. You'll see <code>INSTALL_FAILED_VERIFICATION_FAILURE: Install not allowed</code>. Two workarounds:
+  <ol>
+    <li><strong>Settings UI route:</strong> push the APK to the phone with <code>adb push deep_link_app.apk /sdcard/Download/</code>, open the file from the Files app on the phone, and accept the "install unknown app" prompt. The user dialog satisfies Knox.</li>
+    <li><strong>Disable Google Play Protect</strong> temporarily: open Play Store → profile icon → Play Protect → ⚙ → toggle "Scan apps with Play Protect" off. Re-enable after the drill.</li>
+  </ol>
+</div>
+
+<div class="exercise">
+  <h3>Exercise — Trigger the SMS via deep link, two ways (slides 41–42)</h3>
+
+  <ol>
+    <li>Install the app: <code>adb install -r -g deep_link_app.apk</code> (apply the gotcha workaround if Knox blocks you).</li>
+    <li>Method A — through HTML: copy the bundled <code>test.html</code> to the phone with <code>adb push test.html /sdcard/Download/</code>, open the Files app on the phone, tap the file. Fill in a phone number and message, tap the link.</li>
+    <li>Method B — through ADB directly. Trigger the same deep link without any HTML at all using <code>am start -a android.intent.action.VIEW -d "&lt;deep-link-uri&gt;"</code>. The slide gives an example URL — read it, then construct your own.</li>
+    <li>Open Burp / Logcat / Files-on-phone and confirm the app received the URL and dispatched the SMS.</li>
+  </ol>
+
+  <details>
+    <summary>Hint 1 — The URL shape</summary>
+    <p>The slide example: <code>smssender://send?data=0506944922:hello</code>. Anatomy:</p>
+    <ul>
+      <li><code>smssender</code> — the custom scheme the app's manifest declared</li>
+      <li><code>send</code> — the host portion (the app's intent filter probably matches <code>host="send"</code>)</li>
+      <li><code>data=&lt;number&gt;:&lt;message&gt;</code> — query parameter the app parses</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Hint 2 — URL-encoding spaces</summary>
+    <p>Spaces in URLs become <code>%20</code>. So <code>"Hello World"</code> → <code>Hello%20World</code>. The slide example uses <code>Hello%20%26%20Welcome</code> for "<code>Hello &amp; Welcome</code>" — note that <code>&amp;</code> in a URL means "next query param", so it must be encoded as <code>%26</code>.</p>
+  </details>
+
+  <details>
+    <summary>Hint 3 — adb command shape</summary>
+    <p>The action is <code>android.intent.action.VIEW</code>; the data URI is the deep link itself. Quotes around the URI are important because <code>?</code> and <code>&amp;</code> would otherwise confuse the shell.</p>
+    <pre><code>adb shell am start -a android.intent.action.VIEW -d "&lt;your-uri-here&gt;"</code></pre>
+  </details>
+
+  <details>
+    <summary>Hint 4 — How to know the deep link arrived</summary>
+    <p>Open <code>adb logcat | grep -i deeplink</code> in another terminal before you trigger the link. The app prints to logcat when it receives the URI.</p>
+  </details>
+</div>
+
+<h2>3. Why this is a real attack pattern</h2>
+
+<p>This drill is the simplest case (the user explicitly fills in a number and taps "Send"). But the same machinery enables more interesting attacks:</p>
+
+<ul>
+  <li>An attacker controls a third-party website. They embed a hidden link to <code>smssender://send?data=&lt;premium-rate-number&gt;:hi</code>. The user visits the page in their browser, the browser sees a non-http scheme, and asks the OS to dispatch — the SMS app fires.</li>
+  <li>An attacker delivers a malicious app via a different channel (sideload, side-effect of another app). The app declares the same scheme. Now there are <em>two</em> apps claiming <code>smssender://</code> — the one that wins is the one with the higher intent-filter <code>priority</code>. Read the <code>android:priority</code> attribute trick in <em>Android Vulnerabilities</em> slide 10 notes.</li>
+  <li>An attacker uses a deep link that any preinstalled app may handle (e.g. the dialer's <code>tel:</code> scheme) to perform actions in chained scenarios.</li>
+</ul>
+
+<h2>Reflection</h2>
+<ol>
+  <li>The app declares <code>smssender</code> as a custom scheme. Why does Android allow apps to claim arbitrary schemes? What would change if all schemes had to be Google-issued like Play Store package names?</li>
+  <li>The lab APK was granted SMS permission via <code>-g</code>. On a real install, the user must grant it interactively. Does that prompt mitigate this attack class? Why or why not?</li>
+  <li>How would you defend an app like this if you had to ship it for legitimate reasons (e.g. an enterprise SMS sender)?</li>
+</ol>
+
+<footer>
+  <p>Solutions and worked outputs: <a href="DeepLink_Solution.html">DeepLink_Solution.html</a></p>
+  <p class="meta">Course: Android Security · Day 3 · Deep-link drill (Android Application slides 41–42). All commands taken verbatim from the slide deck.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

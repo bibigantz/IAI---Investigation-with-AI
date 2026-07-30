@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MITM Drill — Day 4 — Android Security Course</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --hint-bg:#f0f7f0; --hint-border:#2a8b3a; --note-bg:#eef7ee; --note-border:#3a8b3a; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+h4 { font-size:16px; margin-top:18px; }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+.note { background:var(--note-bg); border-left:3px solid var(--note-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; width:100%; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+blockquote { margin:14px 0; padding:8px 16px; border-left:3px solid var(--rule); color:var(--muted); background:#f8f8f8; }
+a { color:var(--accent); }
+hr { border:none; border-top:1px solid var(--rule); margin:24px 0; }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>MITM Drill — Intercepting HTTPS, Defeating It With Pinning</h1>
+<p class="lede">Student walkthrough for the Man-in-the-middle drill. By the end you will use Burp Suite Community as a transparent HTTPS proxy for an Android app, install Burp's CA onto a Samsung Galaxy A51, see an app's <code>Authorization: Basic</code> header captured in cleartext inside Burp, and add certificate pinning to the app and watch Burp's MITM cert get rejected by name.</p>
+
+<p>The lab uses the <code>NetworkTraffic</code> Android Studio project and the <code>network-traffic.apk</code> build it produces. The backend is the public <code>https://httpbin.org/basic-auth/user/passwd</code> endpoint, so every request reaches a real server and you can see real <code>200 / 401</code> responses on the phone.</p>
+
+<blockquote>All instructions assume Windows 10 / 11 PCs (the dominant lab environment). Where commands differ on macOS / Linux the alternative is given in a side row of the same table.</blockquote>
+
+<div class="warn">
+  <strong>Read this before you start: undo the proxy when you're done.</strong> This drill sets a system-wide HTTP proxy on the phone (<code>adb shell settings put global http_proxy &lt;ip&gt;:8080</code>). If you walk away with that still set and Burp isn't running, the phone will look like it has Wi-Fi but no internet — every request hits a dead listener. Always run §13 Teardown before unplugging, or at minimum <code>adb shell settings put global http_proxy :0</code>. If you forgot and the phone is no longer near the PC, fix it on the device: <em>Settings → Connections → Wi-Fi → long-press your network → Manage network settings → Proxy → None</em>.
+</div>
+
+<h2>0a. What's in your lab folder</h2>
+
+<p>The course root contains three artifacts for this drill — pick the right one for the phase you're in:</p>
+
+<table>
+<tr><th>File</th><th>Contents</th><th>When to use it</th></tr>
+<tr><td><code>network-traffic.apk</code></td><td>Compiled Phase-1 build — pinning is <strong>OFF</strong></td><td>Phases 3–5 (set up the proxy, install the cert, watch Burp capture the Authorization header). This is the starter APK every student installs.</td></tr>
+<tr><td><code>network-traffic-pinned.apk</code></td><td>Compiled Phase-2 build — pinning is <strong>ON</strong> with the real httpbin.org pins baked in</td><td>Phases 8–9 fallback. Install this if Android Studio / Gradle isn't building cleanly on your PC and you still want to see the "Certificate pinning failure!" error firsthand.</td></tr>
+<tr><td><code>NetworkTraffic.zip</code></td><td>The full Android Studio project source (no <code>build/</code>, no IDE config)</td><td>The pedagogically correct path for Phase 7 — unzip, open in Android Studio, <strong>uncomment the <code>CertificatePinner</code> block</strong> in <code>MainActivity.kt</code>, press <strong>Run ▶</strong>. Reading and editing the source is the actual lesson.</td></tr>
+</table>
+
+<blockquote>The two APKs are identical except for that one Kotlin block, so when you switch from one to the other Android refuses the install with <code>INSTALL_FAILED_UPDATE_INCOMPATIBLE</code> (different debug signing). Run <code>adb uninstall com.example.networktraffic</code> between switches.</blockquote>
+
+<h2>0. What you need installed</h2>
+
+<p>Same toolchain as the rest of the course, plus Burp:</p>
+
+<table>
+<tr><th>Tool</th><th>Why we need it</th><th>How to install (Windows)</th></tr>
+<tr><td><strong>Burp Suite Community Edition</strong></td><td>The HTTPS proxy that does the MITM</td><td><a href="https://portswigger.net/burp/communitydownload" target="_blank">portswigger.net/burp/communitydownload</a> — installer adds <em>Burp Suite Community Edition</em> to the Start menu</td></tr>
+<tr><td><strong>Android Studio</strong></td><td>Bundles <code>adb</code>, builds the demo project</td><td>Already installed for the signature drill</td></tr>
+<tr><td><strong>Java JDK 11+</strong></td><td>Provides <code>keytool</code> (signature drill fallback) and JVM for Burp on older installers</td><td>Comes with Android Studio</td></tr>
+<tr><td><strong>OpenSSL</strong></td><td>Computes the SPKI SHA-256 used for pinning</td><td>Comes free with Git for Windows (<code>C:\Program Files\Git\usr\bin\openssl.exe</code>). If <code>openssl</code> doesn't run from cmd or PowerShell, install Git from <a href="https://git-scm.com/download/win" target="_blank">git-scm.com/download/win</a> and use Git Bash as your terminal</td></tr>
+<tr><td><strong>Galaxy A51</strong></td><td>The target device (Android 13, One UI 5)</td><td>—</td></tr>
+<tr><td><strong>Phone &amp; PC on the same network</strong></td><td>Phone must reach the PC's local IP on port 8080. The PC may be on Ethernet and the phone on Wi-Fi — that's fine, as long as both end up on the same college/lab LAN subnet (the routable test is in §3).</td><td>—</td></tr>
+</table>
+
+<p>Two PATH entries you should have from the previous drill (Windows shown):</p>
+<ul>
+  <li><code>%LOCALAPPDATA%\Android\sdk\platform-tools</code> — gives you <code>adb</code></li>
+  <li><code>%LOCALAPPDATA%\Android\sdk\build-tools\&lt;latest&gt;</code> — gives you <code>apksigner</code></li>
+</ul>
+
+<table>
+<tr><th>OS</th><th>How to confirm <code>adb</code> is on your PATH</th></tr>
+<tr><td><strong>Windows (cmd / PowerShell)</strong></td><td><code>where adb</code> — should print one path under <code>platform-tools</code>. Then <code>adb version</code>.</td></tr>
+<tr><td><strong>macOS / Linux</strong></td><td><code>which adb</code> then <code>adb version</code>.</td></tr>
+</table>
+
+<p>If <code>where adb</code> finds nothing on Windows, add the folder to PATH via <strong>System Properties → Environment Variables → Path → New</strong>, then open a fresh terminal.</p>
+
+<h3>Allow inbound traffic on port 8080 (Windows Firewall)</h3>
+
+<p>Burp's listener will bind to <code>0.0.0.0:8080</code>, but <strong>Windows Firewall blocks inbound TCP 8080 from other devices on the LAN by default</strong>. The phone will look like it's "doing nothing" because every connection attempt is silently dropped at the firewall — no error in Burp, no error in <code>adb</code>, just nothing.</p>
+
+<p>Two ways to allow it:</p>
+
+<ol>
+  <li><strong>The first time you launch Burp</strong>, Windows pops a <em>"Allow Java(TM) Platform SE binary to communicate"</em> dialog. <strong>Tick "Private networks"</strong> and click <strong>Allow access</strong>. Done.</li>
+  <li>If you missed the dialog or want to be sure, run <strong>PowerShell as Administrator</strong> and:
+    <pre><code>New-NetFirewallRule -DisplayName "Burp Suite (LAN, lab only)" `
+                    -Direction Inbound -Protocol TCP -LocalPort 8080 `
+                    -Action Allow -Profile Private</code></pre>
+    To remove the rule after the lab:
+    <pre><code>Remove-NetFirewallRule -DisplayName "Burp Suite (LAN, lab only)"</code></pre>
+  </li>
+</ol>
+
+<div class="warn">
+  This is the #1 reason the drill silently fails on Windows. If your phone shows the trust-anchor error and Burp's HTTP history is completely empty (not even failed connections), your firewall is dropping the phone's packets — the request never reached Burp at all.
+</div>
+
+<h2>1. Mental model — why this drill works at all</h2>
+
+<p>When the phone trusts the PC as its proxy, every HTTPS request from the app first hits <strong>Burp</strong>, not the real server. For each request Burp:</p>
+
+<ol>
+  <li>Accepts the phone's <code>CONNECT httpbin.org:443</code> (or whatever target).</li>
+  <li><strong>Generates a new server certificate on the fly</strong> signed by Burp's own CA (<code>CN=PortSwigger CA</code>).</li>
+  <li>Performs the TLS handshake with the phone using that fake cert.</li>
+  <li>If the handshake succeeds, decrypts the request, shows it in <strong>Proxy → HTTP history</strong>, and forwards it to the real server.</li>
+</ol>
+
+<p>Step 3 is where the security model lives. The phone will only accept the fake cert if the chain ends at a CA the phone trusts. Vanilla Android does <strong>not</strong> trust user-installed CAs for app traffic on API 24+ (i.e. apps with <code>targetSdk</code> 24+), and our app's <code>targetSdk</code> is 34. So we need two things to enable interception:</p>
+
+<ol>
+  <li>The Burp CA must be <strong>installed in the phone's user trust store</strong> (Settings UI).</li>
+  <li>The app must declare a <strong>Network Security Config</strong> that explicitly trusts user CAs.</li>
+</ol>
+
+<p>The supplied app already does (2) — open <code>app/src/main/res/xml/network_security_config.xml</code> to see it. Step (1) is what you do during the lab.</p>
+
+<p>The Phase 2 part of the drill (pinning) is what defeats this whole chain even when (1) and (2) are both in place: pinning checks <strong>specific public keys</strong> in the cert chain and refuses any chain that doesn't match — Burp's fake cert can be valid for the hostname yet still get rejected because its SPKI doesn't match the pin.</p>
+
+<h2>2. Quick reference table (verified on this A51)</h2>
+
+<table>
+<tr><th>Setup</th><th>Proxy</th><th>Burp CA installed</th><th>Pinning</th><th>Outcome on phone</th></tr>
+<tr><td>Baseline</td><td>OFF</td><td>—</td><td>OFF</td><td><strong>200 OK</strong> with JSON <code>{ "authenticated": true, "user": "user" }</code></td></tr>
+<tr><td>Wrong creds</td><td>OFF</td><td>—</td><td>OFF</td><td><strong>401 Unauthorized</strong></td></tr>
+<tr><td>Proxy active, no cert yet</td><td>ON</td><td>NO</td><td>OFF</td><td><strong>TLS error: Trust anchor for certification path not found</strong></td></tr>
+<tr><td>Proxy + cert installed</td><td>ON</td><td>YES</td><td>OFF</td><td><strong>200 OK</strong> — Burp now sees the request in HTTP history</td></tr>
+<tr><td>Proxy + cert + pinning</td><td>ON</td><td>YES</td><td>ON</td><td><strong>SSLPeerUnverifiedException: Certificate pinning failure!</strong></td></tr>
+<tr><td>Pinning, direct (no proxy)</td><td>OFF</td><td>YES</td><td>ON</td><td><strong>200 OK</strong> — pinning didn't break legitimate traffic</td></tr>
+</table>
+
+<p>If at any point you don't see the expected outcome, jump to <strong>§14 Common problems</strong> at the bottom.</p>
+
+<h2>3. Find your PC's local IP</h2>
+
+<p>The phone needs to reach the PC. In the lab, the PC is on the wired Ethernet and the phone is on Wi-Fi &mdash; both endpoints land on the same college LAN, so they can talk to each other. What matters is L3 routability (same IP subnet); the medium doesn't.</p>
+
+<!-- NOTE TO INSTRUCTOR: The Wi-Fi credentials and "wired into same network" detail below
+     are specific to the HackerU class5 classroom. If a future cohort runs in a different
+     room or venue, replace the SSID, password, and any HackerU references in the warn box
+     below with the local credentials before handing the drill to students. The ping check
+     and the USB-tunnel fallback further down apply everywhere and don't need to change. -->
+<div class="warn">
+  <strong>HackerU class5 classroom &mdash; Wi-Fi setup.</strong>
+  <p>Connect the phone to:</p>
+  <ul>
+    <li>SSID: <code>class5</code></li>
+    <li>Password: <code>class5ruckus</code></li>
+  </ul>
+  <strong>The HackerU lab PCs are wired into the same <code>class5</code> network over Ethernet</strong>, so the phone (on Wi-Fi) and the PC (on Ethernet) land on the same LAN and can route to each other &mdash; no extra setup needed once both are joined. Do <em>not</em> join any "guest"/"visitor" SSID; those are AP-isolated and won't reach the PC even if the phone gets an IP.
+</div>
+
+<table>
+<tr><th>OS</th><th>Command (run on the PC)</th><th>What to look for</th></tr>
+<tr><td><strong>Windows (cmd or PowerShell)</strong></td><td><code>ipconfig</code></td><td>For a wired lab PC, look under the <strong>Ethernet adapter Ethernet</strong> section for the <strong>IPv4 Address</strong> line, e.g. <code>10.x.x.x</code> or <code>192.168.x.x</code>. (If your PC happens to use Wi-Fi, the line lives under <em>Wireless LAN adapter Wi-Fi</em> instead.) Ignore virtual adapters like VMware, Hyper-V, or WSL.</td></tr>
+<tr><td><strong>Windows (PowerShell, faster)</strong></td><td><code>Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } | Select InterfaceAlias, IPAddress</code></td><td>One row per active adapter. Pick the IP whose <code>InterfaceAlias</code> is your physical adapter (typically <code>Ethernet</code> in the lab).</td></tr>
+<tr><td><strong>macOS</strong></td><td><code>ipconfig getifaddr en0</code> (Wi-Fi) or <code>en1</code> (Ethernet/dock)</td><td>Single IPv4 string</td></tr>
+<tr><td><strong>Linux</strong></td><td><code>hostname -I</code> <em>or</em> <code>ip addr show</code></td><td>Look at the <code>inet</code> line for your active interface (<code>eth0</code> / <code>enp*</code> for Ethernet, <code>wlan0</code> / <code>wlp*</code> for Wi-Fi)</td></tr>
+</table>
+
+<p>Anywhere this drill writes <strong><code>10.0.0.10</code></strong>, substitute the IP your <code>ipconfig</code> printed.</p>
+
+<blockquote>The phone must be <strong>routable to the PC over the lab network</strong> — they don't have to share the same /24, just be reachable across whatever subnets the campus network bridges (a /19 or /16 corporate net is common). If the PC reports <code>192.168.1.42</code> and <code>adb shell ip route</code> on the phone shows <code>10.0.0.0/24</code>, the two are on disjoint segments (e.g. the phone joined the guest Wi-Fi while the PC is on the staff LAN); fix the phone's Wi-Fi before continuing. The ping check below is the authoritative test — trust it over any subnet-matching mental arithmetic.</blockquote>
+
+<div class="note">
+  <strong>If you can't get the phone onto the same subnet</strong> (different SSIDs, AP isolation, etc.), there are two fallbacks:
+  <ol>
+    <li><strong>Switch Wi-Fi networks on the phone.</strong> Settings → Connections → Wi-Fi → forget the current SSID and join the one that's on the same college LAN as the PC. Re-run <code>adb shell ip route</code> to confirm the new <code>src</code> is in the PC's /24.</li>
+    <li><strong>Tunnel Burp through USB with <code>adb reverse</code>.</strong> Same trick the Dynamic Code Loading drill uses. Keep Burp's listener on <code>127.0.0.1:8080</code> (don't switch it to All interfaces), then on the PC:
+      <pre><code>adb reverse tcp:8080 tcp:8080
+adb shell settings put global http_proxy 127.0.0.1:8080</code></pre>
+      The phone now proxies to its own loopback, which the USB cable forwards to the PC's loopback where Burp listens. Bypasses the LAN, the firewall, and any subnet question. Tunnel dies on unplug/reboot — re-run if needed.
+    </li>
+  </ol>
+  <strong>If the phone and PC are already on the same network</strong> (the normal lab setup: phone on Wi-Fi, PC on Ethernet, both on the college LAN), you don't need either fallback — the §5 proxy command pointing at the PC's LAN IP just works.
+</div>
+
+<h3>Verify reachability before continuing</h3>
+
+<p>From the PC, ping the phone to confirm the two endpoints can route to each other across the lab network:</p>
+
+<pre><code>adb shell ip route</code></pre>
+
+<p>Look at the <code>src</code> value (e.g. <code>src 10.0.0.17</code>) — that's the phone's IP on the Wi-Fi side. Then on the <strong>PC</strong>:</p>
+
+<pre><code>ping &lt;phone-IP&gt;</code></pre>
+
+<p>If <code>ping</code> times out, the two endpoints aren't routable — likely on different segments (phone on guest Wi-Fi vs PC on staff LAN, or AP isolation between Wi-Fi clients and the wired side).</p>
+
+<h2>4. Phase 1 — start Burp and bind it to all interfaces</h2>
+
+<ol>
+  <li><strong>Launch Burp Suite Community Edition</strong> — Windows: from the Start menu. macOS: from Applications.</li>
+  <li>Click <strong>Next</strong> on the project screen (the Community edition only allows <em>Temporary project</em> — that's fine).</li>
+  <li>Click <strong>Start Burp</strong> on the configuration screen.</li>
+  <li><strong>Windows only:</strong> when the <em>Allow Java(TM) Platform SE binary…</em> firewall dialog appears, <strong>tick "Private networks"</strong> and click <strong>Allow access</strong>. (If you missed it, see §0 to add the rule manually.)</li>
+  <li>Once the main UI is up, go to <strong>Proxy → Proxy settings</strong>.</li>
+  <li>You'll see a single listener at <code>127.0.0.1:8080</code>. <strong>Select it</strong>, click <strong>Edit</strong>, and on the <strong>Binding</strong> tab change <em>Bind to address</em> to <strong>All interfaces</strong>. Click OK.</li>
+</ol>
+
+<h3>Verify Burp is reachable on the LAN</h3>
+
+<table>
+<tr><th>OS</th><th>Command</th><th>Expected output</th></tr>
+<tr><td><strong>Windows (cmd)</strong></td><td><code>netstat -ano | findstr :8080</code></td><td><code>TCP 0.0.0.0:8080 0.0.0.0:0 LISTENING &lt;pid&gt;</code> — note the <code>0.0.0.0</code> (all interfaces). If it shows <code>127.0.0.1:8080</code> you skipped step 6.</td></tr>
+<tr><td><strong>Windows (PowerShell)</strong></td><td><code>Get-NetTCPConnection -LocalPort 8080 -State Listen</code></td><td>A row with <code>LocalAddress = 0.0.0.0</code></td></tr>
+<tr><td><strong>macOS / Linux</strong></td><td><code>lsof -nP -iTCP:8080 -sTCP:LISTEN</code></td><td><code>JavaApplication … TCP *:8080 (LISTEN)</code></td></tr>
+</table>
+
+<h3>Smoke-test the proxy itself</h3>
+
+<p>From the PC, prove Burp is forwarding correctly. <code>curl</code> is built into Windows 10 / 11:</p>
+
+<pre><code>curl -sI -x http://127.0.0.1:8080 https://example.com</code></pre>
+
+<p>Expected first line: <strong><code>HTTP/1.1 200 Connection established</code></strong> — that's Burp answering the CONNECT verb. If you get a <code>Bad gateway</code>, Burp isn't actually running on 8080.</p>
+
+<h3>Confirm Windows Firewall is letting the LAN in</h3>
+
+<p>This is the make-or-break test. From the <strong>PC</strong>, but using its <strong>own LAN IP</strong> (not 127.0.0.1):</p>
+
+<pre><code>curl -sI -x http://&lt;your-LAN-IP&gt;:8080 https://example.com</code></pre>
+
+<p>Same <code>200 Connection established</code> is what you want. <strong>A timeout means Windows Firewall is blocking inbound 8080</strong> even though the listener is up — go back to §0 and add the rule.</p>
+
+<h2>5. Phase 2 — point the phone at Burp via adb</h2>
+
+<p>The same <code>adb</code> invocation works in cmd, PowerShell, and bash — only the way you copy/paste differs.</p>
+
+<pre><code>:: Replace 10.0.0.10 with your PC IP discovered in §3
+adb shell settings put global http_proxy 10.0.0.10:8080
+
+:: Sanity check
+adb shell settings get global http_proxy
+::  Expected: 10.0.0.10:8080</code></pre>
+
+<p>This is a <strong>device-wide</strong> proxy (every app, not just our demo). It survives Wi-Fi reconnects on Android 13. It does not require root.</p>
+
+<blockquote>If <code>adb</code> reports <code>error: device unauthorized</code>, look at the phone — there's an <em>Allow USB debugging?</em> dialog waiting. Tick "Always allow from this computer" and tap <strong>Allow</strong>.</blockquote>
+
+<h2>6. Phase 3 — see the trust-anchor error (the "before" state)</h2>
+
+<p>From the folder where <code>network-traffic.apk</code> lives (the course root):</p>
+
+<pre><code>adb install -r network-traffic.apk
+adb shell am start -n com.example.networktraffic/.MainActivity</code></pre>
+
+<p>In the app, type <code>user</code> / <code>passwd</code> and tap <strong>Login</strong>.</p>
+
+<p>Expected on the phone screen:</p>
+
+<pre><code>❌ Network / TLS error
+SSLHandshakeException: java.security.cert.CertPathValidatorException:
+Trust anchor for certification path not found.</code></pre>
+
+<p><strong>This is the right answer</strong> at this stage. The app reached Burp, Burp tried to MITM with a freshly-minted cert signed by <code>CN=PortSwigger CA</code>, but the phone has never been told to trust <code>PortSwigger CA</code>, so the TLS handshake fails. Without the next step the lab would be over.</p>
+
+<blockquote>The Authorization header was <strong>not</strong> transmitted, because TLS never completed. Burp's HTTP history will show the failed connection but no request body.</blockquote>
+
+<h2>7. Phase 4 — push and install Burp's CA</h2>
+
+<p>There are two ways to get Burp's CA off the PC. Either works because every Burp project on the same machine uses the same persisted CA.</p>
+
+<h3>7a. Quickest — export the live CA from Burp</h3>
+
+<p>In Burp: <strong>Proxy → Proxy settings → Import / export CA certificate → Certificate in DER format → Next</strong> → save it. Suggested location:</p>
+
+<table>
+<tr><th>OS</th><th>Where to save</th></tr>
+<tr><td><strong>Windows</strong></td><td><code>C:\Temp\burp.der</code> (create <code>C:\Temp</code> if it doesn't exist)</td></tr>
+<tr><td><strong>macOS / Linux</strong></td><td><code>~/Downloads/burp.der</code></td></tr>
+</table>
+
+<p>Then push it to the phone:</p>
+
+<pre><code>adb push C:\Temp\burp.der /sdcard/Download/burp.der</code></pre>
+
+<p>(macOS / Linux: <code>adb push ~/Downloads/burp.der /sdcard/Download/burp.der</code>)</p>
+
+<h3>7b. Alternative — fetch over the proxy</h3>
+
+<p>While the phone is proxying through Burp, Burp serves its CA at <code>http://burp/cert</code>. From the PC:</p>
+
+<pre><code>:: Windows (cmd or PowerShell — curl is built in on Windows 10+)
+curl -s -x http://127.0.0.1:8080 http://burp/cert -o C:\Temp\burp.der
+adb push C:\Temp\burp.der /sdcard/Download/burp.der</code></pre>
+
+<pre><code># macOS / Linux
+curl -s -x http://127.0.0.1:8080 http://burp/cert -o /tmp/burp.der
+adb push /tmp/burp.der /sdcard/Download/burp.der</code></pre>
+
+<h3>7c. Easiest — fetch directly on the phone's browser</h3>
+
+<p>While the phone is already proxying through Burp, open the phone's browser (Chrome, Samsung Internet, or any) and go to:</p>
+
+<pre><code>http://burp/cert</code></pre>
+
+<p>Burp intercepts that request and serves the CA cert directly to the phone. The browser saves it to <strong>Downloads</strong> as <code>cacert.der</code>. Skip the <code>adb push</code> step entirely — go straight to the install instructions below and pick <code>cacert.der</code> from the file picker.</p>
+
+<p>This is the no-tools path: no <code>curl</code>, no PC-side file, no push — the phone fetches its own CA. The only requirement is that the proxy is already pointed at Burp (§5).</p>
+
+<h3>Now install it (Samsung A51 / One UI 5)</h3>
+
+<div class="warn">
+  <strong>Before you start &mdash; confirm the file is actually on the phone.</strong> The single biggest cause of "I can't find the cert in the picker" is that it's not there at all (push failed silently, browser saved elsewhere, etc.). From the PC, run:
+  <pre><code>adb shell ls -l /sdcard/Download/*.der /sdcard/Download/*.cer /sdcard/Download/*.crt 2&gt;/dev/null</code></pre>
+  You should see <code>burp.der</code> (if you used path 7a or 7b) or <code>cacert.der</code> (if you used 7c). Note the exact filename &mdash; that's what you'll tap in the picker. If <code>ls</code> shows nothing, the cert never landed; rerun the relevant download step.
+</div>
+
+<p>Settings UI on this phone (Hebrew labels in italics):</p>
+
+<ol>
+  <li><strong>Settings</strong> → <strong>Biometrics and security</strong> <em>(אבטחה ופרטיות)</em></li>
+  <li>Scroll down → <strong>Other security settings</strong> <em>(הגדרות אבטחה אחרות)</em></li>
+  <li><strong>Install from device storage</strong> <em>(התקן מאחסון המכשיר)</em></li>
+  <li><strong>CA certificate</strong> <em>(אישור CA)</em> &mdash; you'll see a "Your network may be monitored" warning <em>("הרשת שלך עלולה להיות מנוטרת")</em>. Tap <strong>Install anyway</strong>.</li>
+  <li><strong>Samsung's file picker opens.</strong> It usually lands on <em>Recent files</em>, which often shows nothing relevant &mdash; don't panic. Tap the <strong>hamburger menu (&equiv;)</strong> at the top-left to see the sources list, then choose <strong>Internal storage</strong> (or <em>"This phone"</em> / <em>"My Files"</em> depending on the firmware language). Browse to <strong>Download</strong>. Tap the file from the previous box &mdash; <code>burp.der</code> or <code>cacert.der</code>, whichever your <code>ls</code> command listed.
+    <ul>
+      <li><strong>File doesn't show up?</strong> Tap the kebab menu <strong>(&#8942;)</strong> at the top-right → <em>Show all files</em> (or change the filter from "Documents" to "All files"). Some Samsung firmware filters the picker to a narrow MIME set by default and hides <code>.der</code> until you switch.</li>
+      <li><strong>Still nothing?</strong> Rename the file from <code>.der</code> to <code>.crt</code> on the PC and push again: <code>adb push burp.der /sdcard/Download/burp.crt</code>. Android always accepts <code>.crt</code> in the certificate picker; <code>.der</code> is occasionally filtered out.</li>
+      <li><strong>Last resort &mdash; reboot the phone</strong> (this was the lab-validated fix on the Samsung A51 / One UI 5: <code>adb reboot</code>, wait 30&ndash;60s for it to come back, redo the Settings &rarr; &hellip; &rarr; CA certificate path). The picker reads from <strong>MediaStore</strong>, the system's media index. <code>adb push</code> drops the file onto disk but does <em>not</em> notify MediaStore, so the picker keeps showing a stale view. A reboot forces MediaStore to rescan external storage on boot and the file becomes visible. Costs you ~1 minute and a reconnection of the proxy &mdash; cheaper than the half hour you'd otherwise spend tapping around.</li>
+    </ul>
+  </li>
+  <li>The cert installs silently. You'll see a small toast confirmation. <strong>Name field that pops up before install</strong> &mdash; type anything you'll recognise (e.g. <code>Burp Lab</code>); it's only used in the User Certificates list for later removal.</li>
+</ol>
+
+<p>Verification (no shell access to <code>/data/misc/user/0/cacerts-added/</code> without root, so we use the empirical test): the next time you run the app, the TLS error is gone.</p>
+
+<blockquote>The little ⚠️ warning triangle that appears in the status bar when a user CA is active is the device telling you "your traffic might be intercepted". It is <em>expected behavior</em> during the lab, and a useful real-world signal: if you ever see it on a banking app, panic.</blockquote>
+
+<h2>8. Phase 5 — see the Authorization header in Burp</h2>
+
+<pre><code>adb shell am force-stop com.example.networktraffic
+adb shell am start -n com.example.networktraffic/.MainActivity</code></pre>
+
+<p>Type <code>user</code> / <code>passwd</code> exactly, tap Login. Expected on the phone:</p>
+
+<pre><code>✅ 200 OK
+Login succeeded.
+{ "authenticated": true, "user": "user" }</code></pre>
+
+<p class="lede"><em>Why those exact strings?</em> The backend URL is <code>https://httpbin.org/basic-auth/user/passwd</code> — httpbin's basic-auth endpoint accepts only the credentials baked into the path. Any other input (e.g. <code>alice</code> / <code>secret</code>) returns <strong>401 Unauthorized</strong> from the server. The Burp capture lesson works either way — the Authorization header lands in HTTP history before httpbin sees it (see §8.3) — but for the 200 OK screen above you need <code>user</code> / <code>passwd</code> verbatim.</p>
+
+<p>In Burp:</p>
+
+<ol>
+  <li>Open <strong>Proxy → HTTP history</strong>.</li>
+  <li>Find the row to <code>httpbin.org</code> with method <code>GET</code> and path <code>/basic-auth/user/passwd</code>.</li>
+  <li>Click it. The lower pane shows the <strong>Request</strong> tab — scroll to the headers and find:
+    <pre><code>Authorization: Basic dXNlcjpwYXNzd2Q=</code></pre>
+  </li>
+  <li>Right-click the value → <strong>Send to Decoder</strong> (or open <strong>Decoder</strong> manually, paste it, and choose <strong>Decode as → Base64</strong>).</li>
+  <li>Output: <code>user:passwd</code>.</li>
+</ol>
+
+<p>This is the lesson: <strong>Basic auth is encoding, not encryption.</strong> Anything sent inside HTTPS is private from third parties on the wire, but if a third party can be the <em>server</em> (which is exactly what Burp is doing here), the contents are plaintext to them.</p>
+
+<h3>8.1 Decode the credential outside Burp (sanity check)</h3>
+
+<p>Burp's Decoder is the easiest path, but you should be able to do this with any tool — that's the point. Pick whichever fits your environment:</p>
+
+<table>
+<tr><th>Tool</th><th>Command / step</th></tr>
+<tr><td><strong>Windows — PowerShell</strong></td><td><code>[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('dXNlcjpwYXNzd2Q='))</code></td></tr>
+<tr><td><strong>Windows — Git Bash</strong></td><td><code>echo dXNlcjpwYXNzd2Q= | base64 -d</code></td></tr>
+<tr><td><strong>macOS / Linux</strong></td><td><code>echo dXNlcjpwYXNzd2Q= | base64 -d</code></td></tr>
+<tr><td><strong>CyberChef</strong> (browser)</td><td>Open <a href="https://gchq.github.io/CyberChef" target="_blank">gchq.github.io/CyberChef</a>, paste <code>dXNlcjpwYXNzd2Q=</code> into Input, drag <strong>From Base64</strong> into the Recipe panel — Output shows <code>user:passwd</code>.</td></tr>
+</table>
+
+<p>All four return <code>user:passwd</code> instantly. No key, no secret, no math. That's what "encoding" means.</p>
+
+<h3>8.2 Forge a credential and replay it (Repeater demo)</h3>
+
+<p>If Burp can <strong>read</strong> the credential, an on-path attacker can also <strong>forge</strong> one. Show the class:</p>
+
+<ol>
+  <li>In Burp, right-click the captured request → <strong>Send to Repeater</strong>.</li>
+  <li>Switch to the <strong>Repeater</strong> tab.</li>
+  <li>Build a fake credential on the command line:
+    <ul>
+      <li><strong>Windows (PowerShell):</strong> <code>[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('attacker:pwned'))</code></li>
+      <li><strong>Windows (Git Bash) / macOS / Linux:</strong> <code>printf 'attacker:pwned' | base64</code></li>
+      <li>Output (all): <code>YXR0YWNrZXI6cHduZWQ=</code></li>
+    </ul>
+  </li>
+  <li>In Repeater, change the header to <code>Authorization: Basic YXR0YWNrZXI6cHduZWQ=</code> and click <strong>Send</strong>.</li>
+  <li>httpbin returns <code>401</code> (because the credential is wrong) — but the <strong>request reached the server with a forged identity</strong>. Against a real backend that accepted those creds, the attacker would now be logged in as <code>attacker</code>.</li>
+</ol>
+
+<p>The takeaway: pinning isn't paranoia. Without it, <code>Authorization</code> headers are both readable and rewritable on any device the attacker can install a CA on.</p>
+
+<h3>8.3 "But the server returned 401 — does that mean the password is safe?"</h3>
+
+<p>A common student question after seeing a 401 in Phase 5 (e.g. typing <code>alice / secret123</code>): "the server rejected it, so the attacker didn't get anything, right?"</p>
+
+<p>Wrong. <strong>Burp captures the request before the server ever sees it.</strong> The flow is:</p>
+
+<pre><code>Phone → (TLS to Burp's CA) → Burp logs the full request → Burp re-encrypts → httpbin → 401 response
+                                       ↑
+                              attacker reads creds here</code></pre>
+
+<p>So even when the credentials are invalid, the attacker still walks away with the username, the (encoded) password, and the request shape — perfect for credential stuffing against a different service or for spray attacks.</p>
+
+<p>To prove the request really reached httpbin and came back:</p>
+<ul>
+  <li>The <strong>Response</strong> tab in Burp shows <code>HTTP/1.1 200 OK</code> with the JSON body.</li>
+  <li>A <code>401</code> from httpbin appears if you submit anything other than <code>user / passwd</code> — but the Authorization header is still in HTTP history regardless.</li>
+</ul>
+
+<h2>9. Phase 6 — compute the SPKI pin you'll need</h2>
+
+<p>Pinning needs the <strong>SHA-256 of the public key</strong> of the cert you're locking to (the SPKI hash, <strong>not</strong> the hash of the whole certificate — common mistake). Generate it directly from a live TLS handshake against httpbin:</p>
+
+<div class="warn">
+  <strong>Windows note:</strong> the pipeline uses <code>openssl</code>, which Windows doesn't ship by default. Easiest path:
+  <ol>
+    <li>Install <strong>Git for Windows</strong> (<a href="https://git-scm.com/download/win" target="_blank">git-scm.com/download/win</a>)</li>
+    <li>Right-click anywhere on the desktop → <strong>Git Bash Here</strong> (or open <em>Git Bash</em> from the Start menu)</li>
+    <li>Run the pipeline below in that Git Bash window — it includes a working <code>openssl</code> and <code>bash</code>.</li>
+  </ol>
+  If you'd rather stick with cmd/PowerShell, prefix with the full path: <code>"C:\Program Files\Git\usr\bin\openssl"</code>.
+</div>
+
+<pre><code># Run in Git Bash (Windows) or any mac/linux terminal
+echo | openssl s_client -showcerts -servername httpbin.org -connect httpbin.org:443 2&gt;/dev/null \
+  | openssl x509 -inform PEM -pubkey -noout \
+  | openssl pkey -pubin -outform DER \
+  | openssl dgst -sha256 -binary \
+  | openssl enc -base64</code></pre>
+
+<p>The pipeline above produces <strong>one</strong> pin — the leaf cert's SPKI hash, because <code>openssl x509</code> reads only the first PEM block from the chain. To get the intermediate pin, run the same pipeline against the <em>second</em> cert in the same TLS chain:</p>
+
+<pre><code># Same source, but skip to the 2nd PEM block (the intermediate)
+echo | openssl s_client -showcerts -servername httpbin.org -connect httpbin.org:443 2&gt;/dev/null \
+  | awk '/BEGIN CERT/{n++} n==2' \
+  | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER \
+  | openssl dgst -sha256 -binary | openssl enc -base64</code></pre>
+
+<p>Verified output at the time of writing this drill:</p>
+
+<pre><code>5BWYNtPxvjsl+qhQLxo3jz3ZaK74xyHT/QdOhBB07i0=        # CN=httpbin.org (leaf — primary pin)
+vxRon/El5KuI4vx5ey1DgmsYmRY0nDd5Cg4GfJ8S+bg=        # Amazon RSA 2048 M03 (intermediate — backup pin)
+++MBgDH5WGvL9Bcn5Be30cRcL0f5O+NyoXuWtQdX1aI=        # Amazon Root CA 1 (root — wider backup)</code></pre>
+
+<h3>Why two pins, not one — and why we skip the root</h3>
+
+<p>Cert chain layers rotate at very different rates:</p>
+
+<table>
+<tr><th>Layer</th><th>Rotation</th><th>What pinning it gives you</th></tr>
+<tr><td>Leaf</td><td>Months (90–365 days)</td><td>Tightest binding — only this exact cert is trusted. Breaks the app on every cert renewal.</td></tr>
+<tr><td>Intermediate</td><td>Years (3–5)</td><td>Survives leaf rotations as long as the issuer doesn't change. Acts as longevity insurance.</td></tr>
+<tr><td>Root</td><td>Decades (10–20+)</td><td>Survives intermediate rotation too — but trusts every cert ever issued under that root, which for Amazon Root CA 1 means millions of unrelated AWS-hosted sites.</td></tr>
+</table>
+
+<p>The drill pins <strong>leaf + intermediate</strong>: leaf is the primary, intermediate is the backup so the app keeps working after the next leaf renewal without an APK update. The root is shown for completeness but <strong>not used in the pinned APK</strong> — pinning it would dilute the protection so much that an attacker with any AWS-issued cert could pass.</p>
+
+<div class="warn">
+  <strong>Pitfall — <code>-binary</code> matters.</strong> Without <code>-binary</code>, <code>openssl dgst -sha256</code> prints the line <code>(stdin)= aabbcc…</code> as plain text and the next pipeline stage Base64-encodes that whole text — producing a wrong pin. Two earlier versions of this drill suffered exactly this bug. If your computed pin doesn't match the values above, double-check that flag.
+</div>
+
+<h2>10. Phase 7 — turn pinning on in the app</h2>
+
+<p>Open <code>app/src/main/java/com/example/networktraffic/MainActivity.kt</code>. The <code>APIClient</code> class has a block guarded by <code>/* ... */</code>:</p>
+
+<pre><code>private val client = OkHttpClient.Builder()
+    /*
+    .certificatePinner(
+        CertificatePinner.Builder()
+            .add(API_HOST, "sha256/5BWYNtPxvjsl+qhQLxo3jz3ZaK74xyHT/QdOhBB07i0=") // leaf
+            .add(API_HOST, "sha256/vxRon/El5KuI4vx5ey1DgmsYmRY0nDd5Cg4GfJ8S+bg=") // intermediate
+            .build()
+    )
+    */
+    .build()</code></pre>
+
+<p>Remove the <code>/* */</code> to activate the pinner. Build and reinstall:</p>
+
+<table>
+<tr><th>OS</th><th>From the <code>NetworkTraffic</code> folder</th></tr>
+<tr><td><strong>Windows (cmd)</strong></td><td><code>gradlew.bat assembleDebug</code> then <code>adb install -r app\build\outputs\apk\debug\app-debug.apk</code></td></tr>
+<tr><td><strong>Windows (PowerShell)</strong></td><td><code>.\gradlew.bat assembleDebug</code> then <code>adb install -r .\app\build\outputs\apk\debug\app-debug.apk</code></td></tr>
+<tr><td><strong>macOS / Linux</strong></td><td><code>./gradlew assembleDebug</code> then <code>adb install -r app/build/outputs/apk/debug/app-debug.apk</code></td></tr>
+</table>
+
+<p>Or, equivalently, just <strong>press the green Run ▶ button in Android Studio</strong> with the A51 selected as the deployment target — the IDE handles build + install for you.</p>
+
+<div class="warn">
+  <strong>Skip-the-build fallback:</strong> if Gradle isn't behaving, you can simply install the prebuilt <code>network-traffic-pinned.apk</code> from the course root:
+  <pre><code>adb uninstall com.example.networktraffic
+adb install -r network-traffic-pinned.apk</code></pre>
+  This gives you the same on-screen result for Phase 8/9 but skips the lesson of touching the code. Use it as a last resort.
+</div>
+
+<h2>11. Phase 8 — confirm pinning blocks Burp</h2>
+
+<p>Make sure the proxy is <strong>still pointing at Burp</strong> (<code>adb shell settings get global http_proxy</code> should still print <code>10.0.0.10:8080</code>). Re-launch the app, type <code>user / passwd</code>, tap Login.</p>
+
+<p>Expected screen:</p>
+
+<pre><code>❌ Network / TLS error
+SSLPeerUnverifiedException: Certificate pinning failure!
+  Peer certificate chain:
+    sha256/&lt;YOUR-BURP-SPKI&gt;=:
+        CN=httpbin.org,OU=PortSwigger CA,O=PortSwigger,C=PortSwigger
+    sha256/&lt;YOUR-BURP-SPKI&gt;=:
+        CN=PortSwigger CA, …
+  Pinned certificates for httpbin.org:
+    sha256/5BWYNtPxvjsl+qhQLxo3jz3ZaK74xyHT/QdOhBB07i0=
+    sha256/vxRon/El5KuI4vx5ey1DgmsYmRY0nDd5Cg4GfJ8S+bg=</code></pre>
+
+<blockquote>Notice that both <code>sha256/&lt;…&gt;</code> rows in the <em>Peer certificate chain</em> print the <strong>same</strong> hash. Burp Community Edition reuses its CA's public key when minting on-the-fly intercept leaf certs, so the leaf and the CA share an SPKI hash — OkHttp prints the same value for both rows. The hash itself is unique to your Burp install (Burp generates a unique CA per project) and won't match anyone else's. The two <em>Pinned certificates</em> values at the bottom are the constants from <code>MainActivity.kt</code> and will be identical for every student.</blockquote>
+
+<p>Read the chain Burp is presenting (top half) vs the pinned set (bottom half). The leaf cert claims <code>CN=httpbin.org</code> but is signed by <strong><code>PortSwigger CA</code></strong> — that's Burp impersonating httpbin. Its SPKI hash matches neither the real leaf pin nor the real intermediate pin, so OkHttp throws.</p>
+
+<p><strong>This is the win condition of the drill.</strong> Pinning <em>defeats</em> Burp interception, even though the user has trusted Burp's CA on the phone and the NSC explicitly accepts user CAs. The OS-level trust chain is no longer the deciding factor — the app pins specific keys.</p>
+
+<h2>12. Phase 9 — confirm pinning didn't break the legitimate path</h2>
+
+<p>Clear the proxy and re-test:</p>
+
+<pre><code>adb shell settings put global http_proxy :0
+adb shell settings get global http_proxy
+:: Expected: :0</code></pre>
+
+<p>Re-launch the app, log in. Expected screen: <strong><code>200 OK</code></strong> again. The pinned chain (real httpbin leaf + real Amazon intermediate) matches what the cert pinner expects, so the request flows normally. A real user on real Wi-Fi never notices that pinning is on — only an attacker does.</p>
+
+<h2>13. Teardown</h2>
+
+<table>
+<tr><th>Action</th><th>Command / step</th></tr>
+<tr><td>Clear the device-wide proxy</td><td><code>adb shell settings put global http_proxy :0</code></td></tr>
+<tr><td>Remove the demo app</td><td><code>adb uninstall com.example.networktraffic</code></td></tr>
+<tr><td>(Optional) remove Burp's CA</td><td>Settings → Biometrics and security → Other security settings → <strong>User certificates</strong> → tap PortSwigger CA → <strong>Remove</strong></td></tr>
+<tr><td>Stop Burp</td><td>Quit the app on the PC</td></tr>
+<tr><td>(Windows only, if you added it) Remove the firewall rule</td><td><strong>PowerShell as Administrator:</strong> <code>Remove-NetFirewallRule -DisplayName "Burp Suite (LAN, lab only)"</code></td></tr>
+</table>
+
+<blockquote>If you skip the proxy-clear step, the phone won't have internet on Wi-Fi after the lab. That's the most common cause of "the network broke after class".</blockquote>
+
+<h2>14. Common problems &amp; how to diagnose</h2>
+
+<table>
+<tr><th>Symptom</th><th>Likely cause</th><th>Diagnose / fix</th></tr>
+<tr><td><strong>Burp's HTTP history is completely empty (no failed connections either)</strong></td><td><strong>Windows Firewall is blocking inbound TCP 8080.</strong> This is by far the #1 problem on Windows.</td><td>From the PC, run <code>curl -sI -x http://&lt;your-LAN-IP&gt;:8080 https://example.com</code>. If it times out, add the firewall rule from §0.</td></tr>
+<tr><td>App keeps showing <code>Trust anchor for certification path not found</code> after installing the cert</td><td>Cert installed in the <strong>VPN/app</strong> category instead of CA, OR a <em>different</em> <code>burp.der</code> was on disk than the one Burp is currently using</td><td>Re-export the CA from Burp (Phase 7a). Reinstall under <strong>CA certificate</strong>, not "VPN &amp; app".</td></tr>
+<tr><td><code>Connection refused</code> on the phone, <strong>Burp HTTP history shows failed CONNECTs</strong></td><td>Burp listener is still on <code>127.0.0.1</code>, not All interfaces</td><td>Phase 1 step 6 — re-edit the listener</td></tr>
+<tr><td><code>adb</code> reports <code>error: device unauthorized</code></td><td>The phone never accepted USB debugging from this PC</td><td>Look at the phone — accept the <em>Allow USB debugging?</em> dialog. If it never appears: Settings → Developer options → <strong>Revoke USB debugging authorizations</strong> and replug.</td></tr>
+<tr><td><code>where adb</code> (Windows) finds nothing</td><td>platform-tools isn't on PATH</td><td>Add <code>%LOCALAPPDATA%\Android\sdk\platform-tools</code> via System Properties → Environment Variables → Path → <strong>New</strong>, then open a fresh terminal</td></tr>
+<tr><td><code>openssl: command not found</code> on Windows</td><td>OpenSSL isn't on PATH</td><td>Open <strong>Git Bash</strong> instead (it includes openssl), or call it directly: <code>"C:\Program Files\Git\usr\bin\openssl"</code></td></tr>
+<tr><td><code>gradlew.bat</code> complains about <code>JAVA_HOME</code></td><td>JDK env var not set on Windows</td><td>Set system env var <code>JAVA_HOME</code> to the JDK path inside Android Studio (<code>C:\Program Files\Android\Android Studio\jbr</code>), restart the terminal</td></tr>
+<tr><td><code>Pinning failure</code> on <strong>direct</strong> traffic (proxy off)</td><td>The leaf pin you computed is stale (httpbin renewed its cert) or you computed it without <code>-binary</code></td><td>Re-run the openssl pipeline in §9. The intermediate (<code>Amazon RSA 2048 M03</code>) pin is the slowest-rotating; if all else fails pin only that</td></tr>
+<tr><td>TLS error mentions <code>domain</code> instead of <code>Trust anchor</code> when the proxy is active</td><td>NSC was overridden — student edited <code>network_security_config.xml</code> and removed <code>&lt;certificates src="user"/&gt;</code></td><td>Restore the <code>base-config</code> block from the supplied project</td></tr>
+<tr><td>The phone shows the lock screen between adb taps</td><td>Screen-off timeout fired</td><td><code>adb shell svc power stayon usb</code> keeps it awake while plugged into the PC</td></tr>
+<tr><td>Phone has no internet at all on Wi-Fi</td><td>Proxy still set, Burp closed</td><td><code>adb shell settings put global http_proxy :0</code></td></tr>
+</table>
+
+<h3>Useful logcat lines</h3>
+
+<table>
+<tr><th>OS</th><th>Filtered live log</th></tr>
+<tr><td><strong>Windows (cmd)</strong></td><td><code>adb logcat -c &amp; adb logcat | findstr "API_RESPONSE API_ERROR"</code></td></tr>
+<tr><td><strong>Windows (PowerShell)</strong></td><td><code>adb logcat -c; adb logcat | Select-String "API_RESPONSE","API_ERROR"</code></td></tr>
+<tr><td><strong>macOS / Linux</strong></td><td><code>adb logcat -c; adb logcat | grep -E "API_RESPONSE|API_ERROR"</code></td></tr>
+</table>
+
+<p><code>API_RESPONSE</code> lines show the HTTP status code Burp/httpbin returned. <code>API_ERROR</code> shows the first lines of the exception, which tells you whether the failure is <strong>trust anchor</strong> (Phase 3), <strong>pinning failure</strong> (Phase 8), or something else.</p>
+
+<h2>15. Self-check — what you should be able to explain</h2>
+
+<p>By the end of the drill, in your own words:</p>
+
+<ol>
+  <li>Why does Burp need to install a CA on the phone, and why does the app need a Network Security Config that trusts user CAs?</li>
+  <li>What exactly does Burp do during a TLS handshake to "be" httpbin.org?</li>
+  <li>Why is <code>Authorization: Basic</code> not actually a security feature?</li>
+  <li>What is the difference between the certificate hash and the <strong>SPKI</strong> hash, and why is the SPKI the value we pin?</li>
+  <li>Why does pinning still block Burp even though the device trusts Burp's CA system-wide?</li>
+  <li>Why do we keep an intermediate as a <em>backup pin</em>, and what happens if you only pin the leaf?</li>
+</ol>
+
+<p>If any of those are fuzzy, redo the relevant phase before moving on.</p>
+
+<footer>
+  <p class="meta">Course: Android Security · Day 4 · MITM drill (Burp + Network Security Config + certificate pinning).</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

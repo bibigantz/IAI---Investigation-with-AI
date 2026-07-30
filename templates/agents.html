@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="agent-layout">
+    <!-- LEFT SIDEBAR: AGENT LIST -->
+    <div class="glass-card" style="padding: 1rem;">
+        <div class="card-header" style="margin-bottom: 0.75rem; padding-bottom: 0.5rem;">
+            <div class="card-title" style="font-size:0.95rem;">⚙️ Swarm Worker Nodes</div>
+        </div>
+        <div class="agent-list" id="agent-sidebar-list">
+            <!-- Populated dynamically by JS -->
+        </div>
+    </div>
+
+    <!-- MAIN PANEL: AGENT CONTROL CENTER -->
+    <div>
+        <div class="glass-card" id="agent-main-card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title" id="selected-agent-title">Select an Agent Node</div>
+                    <div style="font-size:0.85rem; color:var(--text-muted);" id="selected-agent-role">Click any worker node on the left sidebar to inspect and customize.</div>
+                </div>
+                <div id="selected-agent-state-badge" class="mode-badge">
+                    <span class="state-dot GRAY"></span> IDLE
+                </div>
+            </div>
+
+            <!-- INSTRUCTION CUSTOMIZATION ENGINE -->
+            <div class="glass-card" style="background: rgba(10, 13, 22, 0.6); margin-bottom: 1.5rem;">
+                <div class="card-header" style="border:none; padding-bottom:0;">
+                    <div class="card-title" style="font-size:0.95rem; color:var(--accent-cyan);">
+                        🧠 Instruction Customization Engine (System Prompt Override)
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 0.75rem;">
+                    <textarea id="agent-system-prompt" class="form-textarea" rows="4" placeholder="Customize or override system prompt instructions for this agent..."></textarea>
+                </div>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn btn-primary" onclick="savePromptOverride()">
+                        💾 Save System Prompt Override
+                    </button>
+                </div>
+            </div>
+
+            <!-- DIRECT INTERCOM INTERFACE & HITL LOOP PANEL -->
+            <div class="glass-card" style="background: rgba(10, 13, 22, 0.6); margin-bottom: 0;">
+                <div class="card-header" style="border:none; padding-bottom:0;">
+                    <div class="card-title" style="font-size:0.95rem; color:var(--accent-yellow);">
+                        🗣️ Direct Intercom Interface & HITL Loop Panel
+                    </div>
+                </div>
+
+                <div class="split-view" style="margin-top: 1rem;">
+                    <div>
+                        <label class="form-label">📊 Raw Parsed Tool Output (CSV / JSON Data)</label>
+                        <div class="code-viewer" id="agent-raw-viewer">Select an agent node to view parsed evidence data.</div>
+                    </div>
+                    <div>
+                        <label class="form-label">🤖 Proposed AI Analysis & Anomalies Report</label>
+                        <div class="code-viewer" id="agent-ai-viewer">Select an agent node to view LLM analysis report.</div>
+                    </div>
+                </div>
+
+                <!-- HITL INTERACTION FORM -->
+                <div id="agent-hitl-form-area" style="margin-top: 1.5rem; border-top: 1px solid var(--card-border); padding-top: 1.5rem; display:none;">
+                    <div style="background:rgba(255,183,0,0.1); border:1px solid var(--accent-yellow); padding:0.75rem 1rem; border-radius:6px; margin-bottom:1rem; font-size:0.9rem; color:var(--accent-yellow); font-weight:600;">
+                        ⏸️ Action Required: Sub-agent is awaiting analyst steering approval.
+                    </div>
+
+                    <div style="display:flex; gap:1rem; align-items:flex-end;">
+                        <button class="btn btn-success" style="padding:0.75rem 1.5rem; font-size:1rem;" onclick="submitApproveFromPage()">
+                            ✅ [ Approve ] Commit Analysis
+                        </button>
+                        <div style="flex:1;" class="form-group">
+                            <label class="form-label">💬 [ Add User Input ] Context Injection</label>
+                            <input type="text" id="agent-user-feedback" class="form-input" placeholder="Inject feedback/instructions for LLM re-evaluation loop...">
+                        </div>
+                        <button class="btn btn-warning" style="padding:0.75rem 1.25rem;" onclick="submitReviseFromPage()">
+                            🔄 [ Revise ] Re-Run
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

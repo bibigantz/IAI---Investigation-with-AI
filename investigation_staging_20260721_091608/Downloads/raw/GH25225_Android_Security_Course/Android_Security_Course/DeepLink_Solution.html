@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deep Link Drill — Solution — Day 3</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.solution { background:var(--solution-bg); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--solution-border); }
+.solution h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Deep Link Drill — Solutions</h1>
+<p class="lede">All commands and URLs are taken from slides 41–42 of <em>Android Application.pptx</em>.</p>
+
+<h2>Solution — both methods</h2>
+
+<div class="solution">
+<h3>Method A: HTML link tapped from the file browser</h3>
+<p>The bundled <code>test.html</code> at the course folder root contains an input field and a link generator. The runtime-generated link looks like:</p>
+<pre><code>smssender://send?data=&lt;number&gt;:&lt;urlencoded-message&gt;</code></pre>
+<p>Push the file once, then open from the phone:</p>
+<pre><code>adb push test.html /sdcard/Download/test.html
+# on the phone: Files app → Download → test.html → fill in fields → tap link</code></pre>
+
+<h3>Method B: ADB directly (no HTML)</h3>
+<pre><code>adb shell am start -a android.intent.action.VIEW -d "smssender://send?data=0506944922:hello"
+
+# with a space-and-ampersand-bearing message:
+adb shell am start -a android.intent.action.VIEW -d "smssender://send?data=+972506944922:Hello%20%26%20Welcome"</code></pre>
+</div>
+
+<h2>What's inside the URL</h2>
+
+<table>
+<tr><th>Piece</th><th>Role</th></tr>
+<tr><td><code>smssender</code></td><td>Custom scheme. The DeepLinkApp manifest registers an <code>intent-filter</code> with <code>&lt;data android:scheme="smssender" /&gt;</code> on its launch activity. Any app can register any scheme.</td></tr>
+<tr><td><code>send</code></td><td>Host portion. The intent filter matches <code>android:host="send"</code>; another path on the same scheme could route to a different feature.</td></tr>
+<tr><td><code>?data=...</code></td><td>Query string. The app's activity reads <code>getIntent().getData().getQueryParameter("data")</code> in code.</td></tr>
+<tr><td><code>:</code> (in the data value)</td><td>An app-specific separator chosen by the developer. Everything before <code>:</code> is the destination number; everything after is the message body. Note this is part of the <em>value</em> — the URL parser doesn't interpret it.</td></tr>
+<tr><td><code>%20</code> / <code>%26</code></td><td>URL-encoding for space and ampersand. Required because raw space breaks URI parsing and raw <code>&amp;</code> would split the query string.</td></tr>
+</table>
+
+<h2>What you'll see on the lab A51</h2>
+
+<p>The deep link reaches the app's launch activity, the activity parses the <code>data=</code> query parameter, and calls <code>SmsManager.sendTextMessage</code>. The carrier accepts the message and the SMS goes out — that <em>is</em> the demonstration of the attack: a tap on a webpage link caused the phone to send a real SMS without a confirmation dialog. <code>logcat</code> shows the app's "deep link received" trace.</p>
+
+<h3>Verifying the deep link landed</h3>
+<pre><code>adb logcat -v time | grep -i "deeplink\|smssender"</code></pre>
+
+<h2>Reflection answers</h2>
+
+<p><strong>Q1 — Why allow arbitrary schemes?</strong> Two reasons. First, the system has to be extensible by third parties without Google sitting in the middle of every URL handler approval — that would re-create the App Store gatekeeping pattern at the URL layer. Second, the early Android model treated apps as cooperative peers; a fragmented scheme namespace was acceptable because the assumption was that the user installed only apps they trust. Modern Android tightens this with <em>App Links</em>, where an HTTPS link to <code>your-domain.com</code> can be claimed by an app only after you prove ownership of the domain via a <code>.well-known</code> file — but custom schemes still have no ownership check.</p>
+
+<p><strong>Q2 — Does the SMS-permission prompt mitigate this?</strong> Partially. The prompt forces the user to consent <em>once</em>. But after that grant, every deep link the app receives can fire SMS without a second prompt. From the user's point of view, "I allowed this app to send SMS for the legitimate use case" becomes "this app sends SMS whenever a website tells it to". The mitigation only works if the user thinks ahead about which other surfaces (browsers, file managers) can dispatch deep links into the app — most users don't.</p>
+
+<p><strong>Q3 — How would you defend a legitimate enterprise SMS sender?</strong></p>
+<ul>
+  <li>Don't accept the destination number from the URL at all. Instead, require an authenticated session (e.g. enterprise SSO) and look up the destination from a server-side address book keyed on the session. The URL becomes "send a templated SMS to recipient X" where X is an opaque ID.</li>
+  <li>Show a confirmation screen for every send — even one that looks scary will be tapped through, but rate-limiting + visible recipient prevent the silent-batch case.</li>
+  <li>Use App Links instead of a custom scheme so only your verified domain can dispatch into the app.</li>
+  <li>Require that the calling Intent's <code>android.intent.extra.REFERRER</code> matches a trusted source (browser, file manager) and reject if it's missing or unrecognised.</li>
+</ul>
+
+<footer>
+  <p>Back to the drill: <a href="DeepLink_Drill.html">DeepLink_Drill.html</a></p>
+  <p class="meta">Course: Android Security · Day 3 · Deep-link drill solution.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>

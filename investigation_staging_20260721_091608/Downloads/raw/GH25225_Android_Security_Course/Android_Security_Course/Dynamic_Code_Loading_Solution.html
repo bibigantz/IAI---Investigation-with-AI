@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dynamic Code Loading — Solution — Day 4</title>
+<style>
+:root { --fg:#1a1a1a; --muted:#555; --bg:#fcfcfc; --accent:#1e6fce; --accent-soft:#e8f0fa; --code-bg:#f4f4f4; --warn-bg:#fff8e0; --warn-border:#d4ad00; --solution-bg:#f0f4fa; --solution-border:#1e6fce; --rule:#d8d8d8; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; color:var(--fg); background:var(--bg); max-width:880px; margin:32px auto; padding:0 24px; line-height:1.55; }
+h1 { font-size:28px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-bottom:4px; }
+h2 { font-size:22px; margin-top:36px; border-bottom:1px solid var(--rule); padding-bottom:4px; }
+h3 { font-size:18px; margin-top:24px; color:var(--accent); }
+.lede { color:var(--muted); margin-top:0; }
+code { background:var(--code-bg); padding:1px 5px; border-radius:3px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; }
+pre  { background:var(--code-bg); padding:12px 14px; border-radius:5px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:0.92em; border-left:3px solid var(--accent); white-space:pre-wrap; word-break:break-word; }
+pre code { background:none; padding:0; }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn-border); padding:10px 14px; border-radius:3px; margin:14px 0; }
+table { border-collapse:collapse; margin:12px 0; width:100%; }
+th, td { border:1px solid var(--rule); padding:6px 12px; text-align:left; vertical-align:top; }
+th { background:var(--accent-soft); }
+.solution { background:var(--solution-bg); padding:14px 18px; border-radius:5px; margin:18px 0; border-left:4px solid var(--solution-border); }
+.solution h3 { margin-top:4px; }
+a { color:var(--accent); }
+footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--rule); color:var(--muted); font-size:0.92em; }
+</style>
+</head>
+<body>
+
+<h1>Dynamic Code Loading — Solutions</h1>
+<p class="lede">All commands taken from slide 14 of <em>Android Vulnerabilities.pptx</em>.</p>
+
+<h2>Solution — build the dex and verify its hash</h2>
+
+<div class="solution">
+<pre><code># Convert JAR to DEX (slide 14 syntax, verbatim)
+&lt;path-to-android-sdk&gt;/build-tools/&lt;version&gt;/d8 --output . your-jar-file.jar
+
+# Slide example:
+/Users/erankatsav/Library/Android/sdk/build-tools/36.1.0/d8 --output . untitled.jar
+
+# Compute SHA-256 of the resulting classes.dex
+shasum -a 256 file_name.dex</code></pre>
+</div>
+
+<h3>Per-OS quick-reference</h3>
+
+<table>
+<tr><th>OS</th><th>Convert JAR → DEX</th><th>Compute SHA-256</th></tr>
+<tr><td>Windows (cmd)</td><td><code>%LOCALAPPDATA%\Android\Sdk\build-tools\36.1.0\d8.bat --output . untitled.jar</code></td><td><code>certutil -hashfile classes.dex SHA256</code></td></tr>
+<tr><td>Windows (PowerShell)</td><td>Same path; same arg</td><td><code>Get-FileHash classes.dex -Algorithm SHA256</code></td></tr>
+<tr><td>Windows (Git Bash)</td><td>Use the d8.bat path with backslashes; pass forward slashes after</td><td><code>shasum -a 256 classes.dex</code></td></tr>
+<tr><td>macOS</td><td><code>~/Library/Android/sdk/build-tools/&lt;ver&gt;/d8 --output . untitled.jar</code></td><td><code>shasum -a 256 classes.dex</code></td></tr>
+<tr><td>Linux</td><td><code>~/Android/Sdk/build-tools/&lt;ver&gt;/d8 --output . untitled.jar</code></td><td><code>sha256sum classes.dex</code></td></tr>
+</table>
+
+<h3>Why <code>d8</code> and not <code>dx</code>?</h3>
+
+<p><code>dx</code> was the original DEX compiler shipped with the Android SDK. <code>d8</code> replaced it in build-tools 28+ — faster, more correct, and the only one supported on modern AGP. If you find a tutorial that says "run <code>dx --dex …</code>", it's pre-2018 and may not work on a current SDK install.</p>
+
+<h2>What the host app's loading code looks like (slide 15)</h2>
+
+<p>The flow inside the host app, in pseudocode:</p>
+
+<pre><code>byte[] dexBytes = downloadFromHttps("https://example.com/payload.dex");
+
+byte[] expected = decodeHex("a3b2c1...");           // hardcoded constant
+byte[] actual   = MessageDigest.getInstance("SHA-256").digest(dexBytes);
+if (!Arrays.equals(expected, actual)) {
+    throw new SecurityException("dex tampered");
+}
+
+File dexFile = new File(context.getCodeCacheDir(), "payload.dex");
+Files.write(dexFile.toPath(), dexBytes, StandardOpenOption.CREATE_NEW);
+dexFile.setReadOnly();   // Android 14 requires this before load
+
+DexClassLoader loader = new DexClassLoader(
+    dexFile.getAbsolutePath(),
+    context.getCodeCacheDir().getAbsolutePath(),
+    null,
+    getClass().getClassLoader()
+);
+Class&lt;?&gt; clazz = loader.loadClass("com.example.payload.Calculation");
+Method m = clazz.getDeclaredMethod("compute", int.class, int.class);
+Object result = m.invoke(clazz.getDeclaredConstructor().newInstance(), 4, 7);</code></pre>
+
+<p>Every line of that code is reachable through JADX search. The <em>defensive</em> lines — <code>SHA-256</code> compare and <code>setReadOnly()</code> — are present in the lab APK; check whether they're actually wired correctly (the demo code uses them; a real attacker would skip them).</p>
+
+<h2>Reflection answers</h2>
+
+<p><strong>Q1 — Smallest set of signals that's a useful indicator</strong>:</p>
+<ul>
+  <li>App declares <code>INTERNET</code> (essentially every app does — by itself useless)</li>
+  <li>App's code references <code>DexClassLoader</code>, <code>InMemoryDexClassLoader</code>, <code>PathClassLoader</code> with constructor args derived from network input, or <code>System.load</code>/<code>System.loadLibrary</code> with paths derived from network input</li>
+  <li>App writes the file it then loads to a path it controls (i.e. file/load isn't a single static asset bundled in the APK)</li>
+</ul>
+<p>Three signals together: network capability + reflective code load + writable-source-of-loaded-code. None alone is meaningful; the combination is the malware archetype.</p>
+
+<p><strong>Q2 — Why "writable" rather than "downloaded"?</strong> The OS can detect "writable" with one stat call; "downloaded" requires tracking provenance through the entire byte stream, which is fragile (an attacker just renames the file). Writable-vs-readonly maps cleanly to "could this file be modified after the app's last verification step" — exactly the property the integrity check needs to bind to. If the file is writable, an attacker who can write to that path can modify the bytes after the SHA-256 check and before the actual load (TOCTOU). Marking the file read-only between check and load is what makes the check meaningful.</p>
+
+<p><strong>Q3 — Defensive bar for merging a <code>DexClassLoader</code> call</strong>:</p>
+<ul>
+  <li>Source URL is HTTPS, hardcoded, with a pinned certificate (not a runtime-fetched URL).</li>
+  <li>SHA-256 of the expected payload is a constant in code <em>or</em> signed by a trusted offline key — never fetched from the same server as the payload.</li>
+  <li>Hash compare runs <em>before</em> the file ever touches disk (use <code>InMemoryDexClassLoader</code>).</li>
+  <li>Loaded class set is allowlisted by name — refuse <code>loadClass(arbitraryUserSuppliedString)</code>.</li>
+  <li>Telemetry: log every successful and failed load so anomalies are visible.</li>
+  <li>Unit tests for the failure paths — bad URL, bad hash, partial download, file becomes writable post-check.</li>
+</ul>
+<p>If the change author can't show all six, the merge waits.</p>
+
+<footer>
+  <p>Back to the drill: <a href="Dynamic_Code_Loading_Drill.html">Dynamic_Code_Loading_Drill.html</a></p>
+  <p class="meta">Course: Android Security · Day 4 · Dynamic code loading solution.</p>
+<p class="copyright" style="text-align:center; margin-top:18px; padding-top:10px; border-top:1px dashed #d8d8d8; color:#777; font-size:0.85em;"><img src="syntax_logo.jpg" alt="Syntax College" style="height:24px; vertical-align:middle; opacity:0.75; margin-right:8px;">&copy; 2025&ndash;2026 Eran Katsav &amp; Syntax College. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
