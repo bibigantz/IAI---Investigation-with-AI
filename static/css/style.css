@@ -74,6 +74,69 @@
     --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Light theme -- same variable names, opposite surface direction. Toggled
+   via the "Theme" control in the navbar user dropdown (see setTheme() in
+   app.js), which sets data-theme on <html> and persists the choice in
+   localStorage. Terminal-style elements (.code-viewer, .help-content pre,
+   log panels) deliberately stay dark in both themes -- that's a console
+   aesthetic, not a page background, and switching it wouldn't read as
+   "correct" the way flipping the page chrome does. */
+html[data-theme="light"] {
+    --bg: #f6f7f9;
+    --bg-soft: #eef0f3;
+    --surface: #ffffff;
+    --surface-2: #f1f3f6;
+    --surface-3: #e7eaef;
+    --overlay-bg: rgba(255, 255, 255, 0.94);
+
+    --border: rgba(15, 23, 32, 0.08);
+    --border-strong: rgba(15, 23, 32, 0.16);
+    --border-accent: rgba(13, 148, 136, 0.4);
+
+    --brand: #0d9488;
+    --brand-dim: rgba(13, 148, 136, 0.12);
+    --brand-strong: #0f766e;
+
+    --state-gray: #6b7280;
+    --state-green: #16a34a;
+    --state-green-dim: rgba(22, 163, 74, 0.12);
+    --state-yellow: #b45309;
+    --state-yellow-dim: rgba(217, 119, 6, 0.14);
+    --state-blue: #0284c7;
+    --state-blue-dim: rgba(2, 132, 199, 0.12);
+
+    --danger: #dc2626;
+    --danger-dim: rgba(220, 38, 38, 0.1);
+    --indigo: #6366f1;
+    --indigo-dim: rgba(99, 102, 241, 0.1);
+
+    --text-primary: #111827;
+    --text-secondary: #4b5563;
+    --text-tertiary: #7c8896;
+
+    --shadow-sm: 0 1px 2px rgba(15, 23, 32, 0.07);
+    --shadow-md: 0 8px 24px -8px rgba(15, 23, 32, 0.12), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+    --shadow-lg: 0 24px 48px -16px rgba(15, 23, 32, 0.16), 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+    --ring-brand: 0 0 0 3px rgba(13, 148, 136, 0.18);
+
+    color-scheme: light;
+}
+
+/* A handful of components pair a fully-opaque bright fill with a hardcoded
+   near-black text color -- correct against dark mode's light/pastel accent
+   shades, but wrong against light mode's deliberately darker versions of
+   those same tokens (chosen so --brand/--state-green/etc. are also legible
+   as plain text on a light page, a different job than "bright fill behind
+   dark text"). Everywhere else already uses a low-opacity *-dim background
+   with the plain accent color as text, which is theme-safe by construction
+   and needs no override. */
+html[data-theme="light"] .nav-link strong,
+html[data-theme="light"] .btn-primary,
+html[data-theme="light"] .btn-success,
+html[data-theme="light"] .btn-warning {
+    color: #ffffff;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -179,7 +242,9 @@ p { margin: 0; }
 .brand-logo {
     width: 34px;
     height: 34px;
-    background: linear-gradient(155deg, var(--brand), #1a9c8c);
+    /* Deliberately hardcoded, not var(--brand) -- a logo mark should look
+       identical in both themes, not shift with the page chrome around it. */
+    background: linear-gradient(155deg, #2dd4bf, #1a9c8c);
     border-radius: 9px;
     display: flex;
     align-items: center;
@@ -1595,6 +1660,38 @@ textarea.form-textarea { font-family: var(--font-mono); font-size: 0.82rem; resi
 .nav-user-dropdown-form { width: 100%; }
 .nav-user-dropdown-logout:hover { background: var(--danger-dim); color: var(--danger); }
 .nav-user-dropdown-logout:hover .icon { color: var(--danger); }
+
+.nav-user-theme-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0.7rem;
+    gap: 0.6rem;
+}
+.nav-user-theme-label { font-size: 0.78rem; color: var(--text-tertiary); font-weight: 600; }
+.theme-toggle-group {
+    display: flex;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-full);
+    padding: 0.15rem;
+    gap: 0.1rem;
+}
+.theme-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--r-full);
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+}
+.theme-toggle-btn .icon { width: 0.95em; height: 0.95em; }
+.theme-toggle-btn:hover { color: var(--text-primary); }
+.theme-toggle-btn.active { background: var(--brand-dim); color: var(--brand); }
 
 /* ==========================================================================
    SYSTEM MANAGEMENT

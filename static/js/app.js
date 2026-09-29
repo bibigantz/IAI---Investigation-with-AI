@@ -191,6 +191,31 @@ function closeUserMenu() {
 }
 
 // ==========================================
+// THEME (light / dark)
+// ==========================================
+// The actual <html data-theme="..."> attribute is already set inline in
+// <head>, before this file even loads, to avoid a flash of the wrong theme
+// on page load (see the inline script in base.html/login.html/
+// change_password.html). This section only handles switching it afterward
+// and keeping the dropdown's toggle buttons in sync.
+
+function setTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("iai_theme", theme); } catch (e) { /* localStorage unavailable -- theme just won't persist */ }
+    syncThemeToggleUI(theme);
+}
+
+function syncThemeToggleUI(theme) {
+    document.querySelectorAll(".theme-toggle-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.value === theme);
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    syncThemeToggleUI(document.documentElement.getAttribute("data-theme") || "dark");
+});
+
+// ==========================================
 // API FETCH & STATE UPDATE FUNCTIONS
 // ==========================================
 

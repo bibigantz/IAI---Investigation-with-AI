@@ -167,3 +167,18 @@ before any agent runs:
   You'll see a log line to that effect during launch.
 - `WINDOWS` and `FILE` scopes collect only the artifact categories
   relevant to their respective agents, not everything `ALL` would.
+
+---
+
+## Light mode / dark mode {#light-dark-mode}
+
+Click your username (top-right of the navbar) to open the dropdown, then
+pick **Theme → ☀ / 🌙**. The choice is saved in your browser (not tied to
+your account — it's per-browser, not per-user) and applies immediately, on
+every page, without a reload.
+
+> ℹ️ **Info:** Terminal-style panels — the live log stream, the raw
+> data/AI analysis code viewers in the Agent Control Center and Topology
+> drawers, the Help Center's code blocks — deliberately stay dark in both
+> themes. That's a console aesthetic, not page chrome, and it reads as
+> intentional rather than "the toggle missed something."

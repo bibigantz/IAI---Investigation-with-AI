@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IAI &middot; Investigate with AI</title>
+    <script>(function(){try{document.documentElement.setAttribute("data-theme", localStorage.getItem("iai_theme") || "dark");}catch(e){}})();</script>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
@@ -71,6 +72,18 @@
                         System Management
                     </a>
                     {% endif %}
+                    <div class="nav-user-dropdown-divider"></div>
+                    <div class="nav-user-theme-row">
+                        <span class="nav-user-theme-label">Theme</span>
+                        <div class="theme-toggle-group">
+                            <button type="button" class="theme-toggle-btn" data-value="dark" onclick="setTheme('dark')" title="Dark mode">
+                                <svg class="icon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                            </button>
+                            <button type="button" class="theme-toggle-btn" data-value="light" onclick="setTheme('light')" title="Light mode">
+                                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+                            </button>
+                        </div>
+                    </div>
                     <div class="nav-user-dropdown-divider"></div>
                     <form method="post" action="/logout" class="nav-user-dropdown-form">
                         <button type="submit" class="nav-user-dropdown-item nav-user-dropdown-logout">
