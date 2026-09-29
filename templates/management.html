@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h1>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            System Management
+        </h1>
+        <div class="page-sub">Exclusion rules, detection rules, AI provider config, evidence retention, and access control.</div>
+    </div>
+</div>
+
+<div class="agent-layout">
+    <div class="panel mgmt-nav-panel" style="padding: var(--sp-3);">
+        <div class="mgmt-nav-group-label">Rule &amp; Detection Management</div>
+        <a href="/management/exclusions" class="mgmt-nav-item {% if active_tab == 'exclusions' %}selected{% endif %}">Findings Exclusion Rules</a>
+        <a href="/management/yara-sigma" class="mgmt-nav-item {% if active_tab == 'yara-sigma' %}selected{% endif %}">YARA &amp; Sigma Rules</a>
+        <a href="/management/baselines" class="mgmt-nav-item {% if active_tab == 'baselines' %}selected{% endif %}">Baseline / Golden-Image Whitelisting</a>
+
+        <div class="mgmt-nav-group-label">AI &amp; Agent Orchestration</div>
+        <a href="/management/llm" class="mgmt-nav-item {% if active_tab == 'llm' %}selected{% endif %}">LLM Provider Configuration</a>
+
+        <div class="mgmt-nav-group-label">Data Lifecycle &amp; Retention</div>
+        <a href="/management/retention" class="mgmt-nav-item {% if active_tab == 'retention' %}selected{% endif %}">Evidence Storage &amp; Retention</a>
+
+        <div class="mgmt-nav-group-label">Auditability &amp; Access Control</div>
+        <a href="/management/access" class="mgmt-nav-item {% if active_tab == 'access' %}selected{% endif %}">Audit Log &amp; User Management</a>
+    </div>
+
+    <div>
+        {% if active_tab == 'exclusions' %}
+        <div class="panel" id="mgmt-exclusions-panel">
+            <div class="panel-header">
+                <div class="panel-title">Findings Exclusion Rules</div>
+                <button class="btn btn-primary" onclick="openExclusionDrawer()">+ Add Rule</button>
+            </div>
+            <p class="panel-meta">Findings matching an active rule are suppressed from the main Findings dashboard. "Mark as excluded" keeps them auditable behind the Findings page's "Show excluded" toggle; "Hide completely" never surfaces them at all.</p>
+            <table class="mgmt-table" id="exclusions-table">
+                <thead><tr><th>Type</th><th>Pattern</th><th>Action</th><th>Reason</th><th>Created by</th><th>Suppressing</th><th>Active</th><th></th></tr></thead>
+                <tbody id="exclusions-table-body"></tbody>
+            </table>
+            <div class="empty-state" id="exclusions-empty" style="display:none;">No exclusion rules yet.</div>
+        </div>
+
+        {% elif active_tab == 'yara-sigma' %}
+        <div class="panel" id="mgmt-yara-panel">
+            <div class="panel-header">
+                <div class="panel-title">YARA Rules</div>
+                <button class="btn btn-primary" onclick="openYaraDrawer()">+ Add YARA Rule</button>
+            </div>
+            <p class="panel-meta">Executed against every raw evidence file during the File Analysis pass. A match becomes a finding on the dashboard.</p>
+            <table class="mgmt-table" id="yara-table">
+                <thead><tr><th>Name</th><th>Created by</th><th>Status</th><th>Active</th><th></th></tr></thead>
+                <tbody id="yara-table-body"></tbody>
+            </table>
+            <div class="empty-state" id="yara-empty" style="display:none;">No YARA rules yet.</div>
+        </div>
+
+        <div class="panel" id="mgmt-sigma-panel">
+            <div class="panel-header">
+                <div class="panel-title">Sigma Rules</div>
+                <button class="btn btn-primary" onclick="openSigmaDrawer()">+ Add Sigma Rule</button>
+            </div>
+            <p class="panel-meta form-hint warn">Catalogued and toggleable, but not yet wired into live detection -- there is no Sigma execution backend against the EVTX/Sysmon pipeline in this build. Stored here so rules are ready once that engine exists.</p>
+            <table class="mgmt-table" id="sigma-table">
+                <thead><tr><th>Name</th><th>Created by</th><th>Active</th><th></th></tr></thead>
+                <tbody id="sigma-table-body"></tbody>
+            </table>
+            <div class="empty-state" id="sigma-empty" style="display:none;">No Sigma rules yet.</div>
+        </div>
+
+        {% elif active_tab == 'baselines' %}
+        <div class="panel" id="mgmt-baselines-panel">
+            <div class="panel-header">
+                <div class="panel-title">Baseline / Golden-Image Whitelisting</div>
+                <button class="btn btn-primary" onclick="openBaselineImportModal()">+ Import Hash List</button>
+            </div>
+            <p class="panel-meta">Bulk-imports a known-good file hash list (e.g. from a clean golden image) as "mark as excluded" file-hash exclusion rules, so known-good binaries stop cluttering triage.</p>
+            <table class="mgmt-table" id="baselines-table">
+                <thead><tr><th>Hash</th><th>Reason</th><th>Created by</th><th>Active</th><th></th></tr></thead>
+                <tbody id="baselines-table-body"></tbody>
+            </table>
+            <div class="empty-state" id="baselines-empty" style="display:none;">No baseline hashes imported yet.</div>
+        </div>
+
+        {% elif active_tab == 'llm' %}
+        <div class="panel" id="mgmt-llm-panel">
+            <div class="panel-title">LLM Provider Configuration</div>
+            <p class="panel-meta">Every agent's analysis step and the Findings-page "Deep Analyze" enrichment action read this config. Defaults to a local Ollama endpoint so the platform runs with zero external network access.</p>
+            <div class="form-group">
+                <label class="form-label">Provider label</label>
+                <input type="text" id="llm-provider-label" class="form-input">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Base URL (OpenAI-compatible endpoint)</label>
+                <input type="text" id="llm-base-url" class="form-input" placeholder="http://localhost:11434/v1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">API key <span class="form-hint">(leave blank to keep the current key; local Ollama accepts any placeholder value)</span></label>
+                <input type="password" id="llm-api-key" class="form-input" placeholder="Currently set">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Model name</label>
+                <input type="text" id="llm-model-name" class="form-input" placeholder="llama3.1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Context limit (characters)</label>
+                <input type="number" id="llm-context-limit" class="form-input">
+            </div>
+            <button class="btn btn-primary" onclick="saveLlmConfig()">Save Configuration</button>
+            <p class="form-hint" id="llm-updated-hint" style="margin-top:0.6rem;"></p>
+        </div>
+
+        {% elif active_tab == 'retention' %}
+        <div class="panel" id="mgmt-retention-panel">
+            <div class="panel-title">Evidence Storage</div>
+            <div class="retention-summary-cards" id="retention-summary-cards"></div>
+            <table class="mgmt-table" id="retention-by-investigation-table">
+                <thead><tr><th>Investigation</th><th>Size</th><th>Last modified</th></tr></thead>
+                <tbody id="retention-by-investigation-body"></tbody>
+            </table>
+        </div>
+        <div class="panel" id="mgmt-retention-policy-panel">
+            <div class="panel-title">Retention Policies</div>
+            <p class="panel-meta">Enabling "Auto-flag violations" runs a background check every few minutes and logs a warning the moment a category exceeds its policy -- but deleting forensic evidence is never automatic. Every deletion still requires an explicit Sweep Preview + confirmation, run from the button below.</p>
+            <div id="retention-policy-forms"></div>
+        </div>
+
+        {% elif active_tab == 'access' %}
+        <div class="panel" id="mgmt-users-panel">
+            <div class="panel-header">
+                <div class="panel-title">Users</div>
+                <button class="btn btn-primary" onclick="openCreateUserModal()">+ Create User</button>
+            </div>
+            <table class="mgmt-table" id="users-table">
+                <thead><tr><th>Username</th><th>Role</th><th>Status</th><th></th></tr></thead>
+                <tbody id="users-table-body"></tbody>
+            </table>
+        </div>
+        <div class="panel" id="mgmt-audit-panel">
+            <div class="panel-title">Global Audit Log</div>
+            <p class="panel-meta">Union of per-finding audit history and pipeline/system events, most recent first.</p>
+            <table class="mgmt-table" id="audit-log-table">
+                <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Detail</th></tr></thead>
+                <tbody id="audit-log-table-body"></tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ===================== EXCLUSION RULE DRAWER ===================== -->
+<div class="drawer-overlay" id="exclusion-drawer-overlay" onclick="closeExclusionDrawer()"></div>
+<div class="drawer" id="exclusion-drawer">
+    <div class="drawer-head">
+        <div><h2>Add Exclusion Rule</h2><div class="drawer-role">Suppress matching findings from the dashboard</div></div>
+        <button class="btn btn-ghost btn-icon" onclick="closeExclusionDrawer()">✕</button>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Rule type</label>
+        <select id="ex-rule-type" class="form-select" onchange="onExclusionRuleTypeChange()">
+            <option value="file_hash">File Hash</option>
+            <option value="file_path">File Name / Path</option>
+            <option value="ip">IP Address (or CIDR)</option>
+            <option value="domain">Domain Name</option>
+            <option value="port">Port</option>
+            <option value="process_name">Process Name</option>
+            <option value="pid">PID</option>
+            <option value="ppid">PPID</option>
+            <option value="finding_category">Finding Category (agent / severity)</option>
+        </select>
+    </div>
+    <div class="form-group" id="ex-pattern-group">
+        <label class="form-label">Pattern value</label>
+        <input type="text" id="ex-pattern-value" class="form-input" placeholder="e.g. svchost.exe or *\System32\*.tmp">
+    </div>
+    <div class="form-group" id="ex-mode-group">
+        <label class="form-label">Pattern mode</label>
+        <select id="ex-pattern-mode" class="form-select">
+            <option value="exact">Exact / substring</option>
+            <option value="glob">Glob</option>
+            <option value="regex">Regex</option>
+            <option value="cidr">CIDR (IP rules only)</option>
+        </select>
+    </div>
+    <div class="form-group" id="ex-agent-filter-group" style="display:none;">
+        <label class="form-label">Only from agent (optional)</label>
+        <input type="text" id="ex-source-agent" class="form-input" placeholder="e.g. Amcache_Analyzer">
+    </div>
+    <div class="form-group" id="ex-severity-filter-group" style="display:none;">
+        <label class="form-label">Only at/below severity (optional)</label>
+        <select id="ex-min-severity" class="form-select">
+            <option value="">Any</option>
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="CRITICAL">Critical</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Matching action</label>
+        <select id="ex-matching-action" class="form-select">
+            <option value="mark_excluded">Mark as excluded (auditable, still visible via "Show excluded")</option>
+            <option value="hide_completely">Hide completely</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Reason *</label>
+        <textarea id="ex-reason" class="form-textarea" rows="2" placeholder="Why is this being excluded?"></textarea>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Expiration date (optional)</label>
+        <input type="date" id="ex-expiration" class="form-input">
+    </div>
+    <div class="form-group">
+        <label class="form-label">Test before saving</label>
+        <div class="flex gap-2">
+            <input type="text" id="ex-test-sample" class="form-input" placeholder="Sample value to test against">
+            <button class="btn btn-outline btn-sm" onclick="testExclusionRule()">Test</button>
+        </div>
+        <div id="ex-test-result" class="form-hint"></div>
+    </div>
+    <div class="drawer-footer-actions">
+        <button class="btn btn-primary" onclick="submitExclusionRule()">Save Rule</button>
+    </div>
+</div>
+
+<!-- ===================== YARA RULE DRAWER ===================== -->
+<div class="drawer-overlay" id="yara-drawer-overlay" onclick="closeYaraDrawer()"></div>
+<div class="drawer" id="yara-drawer">
+    <div class="drawer-head">
+        <div><h2>Add YARA Rule</h2><div class="drawer-role">Executed against every raw file in File Analysis</div></div>
+        <button class="btn btn-ghost btn-icon" onclick="closeYaraDrawer()">✕</button>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" id="yara-name" class="form-input">
+    </div>
+    <div class="form-group">
+        <label class="form-label">Rule text</label>
+        <textarea id="yara-rule-text" class="form-textarea mono" rows="14" placeholder="rule my_rule {&#10;    meta:&#10;        severity = &quot;High&quot;&#10;        description = &quot;...&quot;&#10;    strings:&#10;        $a = &quot;evil string&quot;&#10;    condition:&#10;        $a&#10;}"></textarea>
+    </div>
+    <div id="yara-error" class="auth-error" style="display:none;"></div>
+    <div class="drawer-footer-actions">
+        <button class="btn btn-primary" onclick="submitYaraRule()">Save Rule</button>
+    </div>
+</div>
+
+<!-- ===================== SIGMA RULE DRAWER ===================== -->
+<div class="drawer-overlay" id="sigma-drawer-overlay" onclick="closeSigmaDrawer()"></div>
+<div class="drawer" id="sigma-drawer">
+    <div class="drawer-head">
+        <div><h2>Add Sigma Rule</h2><div class="drawer-role">Executed against every EVTX/Sysmon event (selection/filter + and/or/not subset)</div></div>
+        <button class="btn btn-ghost btn-icon" onclick="closeSigmaDrawer()">✕</button>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" id="sigma-name" class="form-input">
+    </div>
+    <div class="form-group">
+        <label class="form-label">Rule YAML</label>
+        <textarea id="sigma-rule-yaml" class="form-textarea mono" rows="14" placeholder="title: ...&#10;logsource:&#10;  category: process_creation&#10;detection:&#10;  selection:&#10;    Image|contains: 'evil.exe'&#10;  condition: selection"></textarea>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Test before saving</label>
+        <textarea id="sigma-test-fields" class="form-textarea mono" rows="3" placeholder='{"Image": "C:\\evil.exe", "EventID": 1}'></textarea>
+        <button class="btn btn-outline btn-sm" style="margin-top:0.4rem;" onclick="testSigmaRule()">Test</button>
+        <div id="sigma-test-result" class="form-hint"></div>
+    </div>
+    <div class="form-hint">Supports named selection/filter blocks, field modifiers <code>|contains</code>/<code>|startswith</code>/<code>|endswith</code>/<code>|re</code>, value lists (OR), and conditions combining block names with and/or/not/parens plus "1 of x*"/"all of x*". Aggregations (count/near/timeframe) are not supported.</div>
+    <div id="sigma-error" class="auth-error" style="display:none;"></div>
+    <div class="drawer-footer-actions">
+        <button class="btn btn-primary" onclick="submitSigmaRule()">Save Rule</button>
+    </div>
+</div>
+
+<!-- ===================== BASELINE IMPORT MODAL ===================== -->
+<div class="modal-overlay" id="baseline-import-modal-overlay" onclick="if(event.target===this) closeBaselineImportModal()">
+    <div class="modal-box">
+        <div class="modal-title">Import Baseline Hash List</div>
+        <p class="modal-copy">Paste one hash per line (MD5/SHA1/SHA256). Each becomes a "mark as excluded" file-hash rule.</p>
+        <div class="form-group">
+            <textarea id="baseline-hashes-input" class="form-textarea mono" rows="10" placeholder="3f2b1a...&#10;9c8d7e...&#10;..."></textarea>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Reason</label>
+            <input type="text" id="baseline-reason-input" class="form-input" value="Golden-image baseline import">
+        </div>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeBaselineImportModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitBaselineImport()">Import</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== CREATE USER MODAL ===================== -->
+<div class="modal-overlay" id="create-user-modal-overlay" onclick="if(event.target===this) closeCreateUserModal()">
+    <div class="modal-box">
+        <div class="modal-title">Create User</div>
+        <div class="form-group">
+            <label class="form-label">Username</label>
+            <input type="text" id="cu-username" class="form-input">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Temporary password (8+ characters)</label>
+            <input type="text" id="cu-password" class="form-input">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Role</label>
+            <select id="cu-role" class="form-select">
+                <option value="analyst">Analyst</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+            </select>
+        </div>
+        <p class="form-hint">The new user will be required to set their own password on first sign-in.</p>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeCreateUserModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreateUser()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== RETENTION SWEEP PREVIEW MODAL ===================== -->
+<div class="modal-overlay" id="sweep-preview-modal-overlay" onclick="if(event.target===this) closeSweepPreviewModal()">
+    <div class="modal-box" style="width:640px;">
+        <div class="modal-title">Retention Sweep Preview -- <span id="sweep-category-label"></span></div>
+        <p class="modal-copy">Nothing is deleted until you select files below and confirm.</p>
+        <div id="sweep-candidates-list" class="sweep-candidates-list"></div>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeSweepPreviewModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="executeSweepSelected()">Delete Selected</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

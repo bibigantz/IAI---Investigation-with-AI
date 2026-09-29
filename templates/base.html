@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAI &middot; Investigate with AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">
+            <div class="brand-logo">IAI</div>
+            <div class="brand-copy">
+                <span class="brand-text">Investigate with AI</span>
+                <span class="brand-tag">Multi-agent forensic swarm</span>
+            </div>
+        </a>
+
+        <div class="nav-links">
+            <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="3 12 8 12 11 4 14 20 17 12 21 12"/></svg>
+                Launch &amp; Telemetry
+            </a>
+            <a href="/topology" class="nav-link {% if request.path == '/topology' %}active{% endif %}">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><line x1="8.1" y1="7.2" x2="15.9" y2="7.2"/><line x1="7" y1="8.2" x2="11" y2="15.8"/><line x1="17" y1="8.2" x2="13" y2="15.8"/></svg>
+                Dynamic Topology
+            </a>
+            <a href="/agents" class="nav-link {% if request.path == '/agents' %}active{% endif %}">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+                Agent Control Center
+            </a>
+            <a href="/findings" class="nav-link {% if request.path == '/findings' %}active{% endif %}">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 3 22 20H2L12 3z"/><line x1="12" y1="9" x2="12" y2="13.5"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor" stroke="none"/></svg>
+                Findings
+                <strong id="nav-findings-badge" style="display:none;"></strong>
+            </a>
+            <a href="/iocs" class="nav-link {% if request.path == '/iocs' %}active{% endif %}">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7" x2="12" y2="13"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor" stroke="none"/></svg>
+                IOCs
+            </a>
+        </div>
+
+        <div class="status-controls">
+            <div class="mode-badge">
+                <span id="mode-text">SUPERVISED</span>
+                <button class="mode-toggle-btn active supervised" id="btn-toggle-mode" onclick="toggleMode()">
+                    Switch
+                </button>
+            </div>
+            <div class="pending-chip">
+                Pending HITL <strong id="nav-pending-badge">0</strong>
+            </div>
+
+            {% if current_user %}
+            <div class="navbar-admin-divider"></div>
+            <div class="nav-user-menu">
+                <button type="button" class="nav-user-trigger" onclick="toggleUserMenu(event)" id="nav-user-trigger" aria-expanded="false">
+                    <span class="nav-user-name">{{ current_user.username }}</span>
+                    <span class="role-badge">{{ current_user.role }}</span>
+                    <svg class="icon chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="nav-user-dropdown" id="nav-user-dropdown">
+                    <a href="/help" class="nav-user-dropdown-item {% if request.path.startswith('/help') %}active{% endif %}">
+                        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1.1-1.5 2.2"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/></svg>
+                        Help
+                    </a>
+                    {% if current_user.role == 'admin' %}
+                    <a href="/management" class="nav-user-dropdown-item {% if request.path.startswith('/management') %}active{% endif %}">
+                        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        System Management
+                    </a>
+                    {% endif %}
+                    <div class="nav-user-dropdown-divider"></div>
+                    <form method="post" action="/logout" class="nav-user-dropdown-form">
+                        <button type="submit" class="nav-user-dropdown-item nav-user-dropdown-logout">
+                            <svg class="icon" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></svg>
+                            Sign out
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="main-container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <div class="toast-stack" id="toast-stack"></div>
+    <div class="confirm-overlay" id="confirm-overlay"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

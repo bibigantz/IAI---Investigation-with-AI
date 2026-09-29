@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- SETUP HUB: Visible when IDLE -->
+<div id="setup-hub" style="display: block;">
+    <div class="page-head">
+        <div>
+            <h1>
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 11 14 9 22 21 10 13 10 13 2"/></svg>
+                Launch Hub
+            </h1>
+            <div class="page-sub">Start a fresh acquisition run or resume a previously staged investigation.</div>
+        </div>
+    </div>
+
+    <div class="two-col">
+        <!-- Option 1: Start New Investigation -->
+        <div class="panel">
+            <div class="subsection-head accent-teal">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 11 14 9 22 21 10 13 10 13 2"/></svg>
+                New Investigation
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Connected target drive</label>
+                <select id="drive-selector" class="form-select"></select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Investigation scope filter</label>
+                <select id="scope-selector" class="form-select" onchange="onScopeChange()">
+                    <option value="ALL">Full system analysis (all tiers)</option>
+                    <option value="WINDOWS">Windows forensics only</option>
+                    <option value="FILE">File / malware analysis only</option>
+                    <option value="MEMORY">Volatility memory analysis only</option>
+                </select>
+            </div>
+
+            <!-- File/Malware Upload Area (visible for ALL and FILE scopes) -->
+            <div id="file-upload-area" class="form-group">
+                <label class="form-label">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+                    Attach file / malware targets
+                </label>
+                <input type="file" id="file-uploader" class="form-input" multiple accept=".exe,.dll,.sys,.zip,.rar,.7z">
+                <span class="file-hint" id="file-uploader-hint"></span>
+                <div class="form-hint warn">Password-protected ZIPs are auto-extracted using the common malware password "infected".</div>
+            </div>
+
+            <!-- Memory Dump Upload Area (visible for ALL and MEMORY scopes) -->
+            <div id="memory-upload-area" class="form-group">
+                <label class="form-label">
+                    <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>
+                    Attach memory dump targets
+                </label>
+                <input type="file" id="memory-uploader" class="form-input" multiple accept=".raw,.dmp,.vmem,.mem,.lime">
+                <span class="file-hint" id="memory-uploader-hint"></span>
+            </div>
+
+            <!-- Event Context Brief Area (visible for all scopes) -->
+            <div class="form-group">
+                <label class="form-label">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                    Incident context brief
+                </label>
+                <textarea id="setup-case-context" class="form-textarea" rows="4" placeholder="What happened, systems involved, or keywords/IOCs to prioritize..."></textarea>
+            </div>
+
+            <!-- Deep File Extractor Area (visible for ALL and FILE scopes) -->
+            <div id="extractor-upload-area" class="form-group callout callout-indigo">
+                <label class="form-label accent-indigo">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/></svg>
+                    Deep file extraction
+                </label>
+                <div class="form-hint">Suspect files are extracted into the investigation's staging folder and automatically queued for the File Analysis pipeline. Password-protected ZIPs are auto-extracted.</div>
+                <input type="file" id="extractor-uploader" class="form-input mt-4" multiple accept=".exe,.dll,.sys,.zip,.rar,.7z,.bin,.dat">
+                <span class="file-hint" id="extractor-uploader-hint"></span>
+            </div>
+
+            <button class="btn btn-primary btn-block btn-lg mt-4" onclick="launchNewSwarm()">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="13 2 3 14 11 14 9 22 21 10 13 10 13 2"/></svg>
+                Launch AI Swarm Pipeline
+            </button>
+        </div>
+
+        <!-- Option 2: Choose Existing Investigation Staging Session -->
+        <div class="panel flex" style="flex-direction: column;">
+            <div class="subsection-head accent-teal" style="cursor: pointer;" title="Click to re-scan for investigation folders" onclick="loadExistingInvestigations(true)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+                Existing Staging Sessions
+            </div>
+
+            <div class="session-list" style="flex: 1; overflow-y: auto; max-height: 380px; margin-bottom: 1rem;" id="existing-sessions-list"></div>
+
+            <div class="form-group" style="margin-top: auto;">
+                <label class="form-label">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                    Incident context brief for selected session
+                </label>
+                <textarea id="existing-case-context" class="form-textarea" rows="3" placeholder="Add or edit the case context for this session..."></textarea>
+            </div>
+
+            <button class="btn btn-outline btn-block btn-lg mt-4" onclick="resumeExistingStaging()">
+                Resume Selected Session
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ACTIVE DASHBOARD: Visible when RUNNING, PAUSED or COMPLETED -->
+<div id="active-dashboard" style="display: none;">
+    <div class="metrics-grid">
+        <div class="metric-card" style="--metric-tint: rgba(45,212,191,0.14);">
+            <div class="metric-label">Pipeline status</div>
+            <div class="metric-value accent-teal" id="kpi-pipeline">IDLE</div>
+            <div class="metric-sub" id="kpi-investigation">No active investigation</div>
+        </div>
+        <div class="metric-card" style="--metric-tint: rgba(242,169,59,0.14);">
+            <div class="metric-label">Execution mode</div>
+            <div class="metric-value accent-yellow" id="kpi-mode">SUPERVISED</div>
+            <div class="metric-sub">Human-in-the-loop active</div>
+        </div>
+        <div class="metric-card" style="--metric-tint: rgba(242,169,59,0.14);">
+            <div class="metric-label">Pending HITL approvals</div>
+            <div class="metric-value accent-yellow" id="kpi-pending">0</div>
+            <div class="metric-sub">Paused sub-agents</div>
+        </div>
+        <div class="metric-card" style="--metric-tint: rgba(52,211,153,0.14);">
+            <div class="metric-label">Total swarm nodes</div>
+            <div class="metric-value" style="color: var(--state-green);" id="kpi-nodes">27</div>
+            <div class="metric-sub">Registered swarm agents</div>
+        </div>
+    </div>
+
+    <!-- PIPELINE STEERING CONTROLS -->
+    <div class="panel flex-between" style="flex-wrap: wrap; gap: var(--sp-4);">
+        <div class="btn-row">
+            <button class="btn btn-warning" id="btn-pause-pipeline" onclick="pausePipeline()">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                Pause
+            </button>
+            <button class="btn btn-success" id="btn-resume-pipeline" style="display: none;" onclick="resumePipeline()">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                Resume
+            </button>
+            <button class="btn btn-outline" onclick="stopPipeline()">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                Stop Swarm
+            </button>
+            <button class="btn btn-outline accent-indigo" style="border-color: rgba(143,151,245,0.4); color: var(--indigo);" onclick="returnToHub()">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9"/></svg>
+                Return to Hub
+            </button>
+            <button class="btn btn-outline" id="btn-download-report" style="display:none;" onclick="downloadActiveReport()">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 19h14"/></svg>
+                Download Report
+            </button>
+        </div>
+
+        <div class="flex gap-3" style="align-items: center;">
+            <span class="text-dim" style="font-size: 0.82rem;">Quick context injection</span>
+            <input type="text" id="active-quick-context" class="form-input" style="width: 280px;" placeholder="Inject new keywords or threat context...">
+            <button class="btn btn-primary" onclick="injectQuickContext()">Update</button>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">
+                <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5"/><path d="M7.5 8.5a6.5 6.5 0 0 0 0 7M16.5 8.5a6.5 6.5 0 0 1 0 7M4.5 5.5a11 11 0 0 0 0 13M19.5 5.5a11 11 0 0 1 0 13"/></svg>
+                Live Investigation Log Stream
+            </div>
+            <button class="btn btn-ghost" onclick="clearLogs()">Clear console</button>
+        </div>
+
+        <div class="terminal-box" id="terminal-stream"></div>
+    </div>
+</div>
+{% endblock %}

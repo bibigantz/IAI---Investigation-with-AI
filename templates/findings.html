@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="empty-state-page" id="no-investigation-banner" style="display:none;">
+    <svg class="icon" viewBox="0 0 24 24" width="48" height="48"><path d="M12 3 22 20H2L12 3z"/><line x1="12" y1="9" x2="12" y2="13.5"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor" stroke="none"/></svg>
+    <h2>No investigation selected</h2>
+    <p>Go to the Launch Hub to start a new investigation or resume an existing staging session to see its findings here.</p>
+    <a href="/" class="btn btn-primary">Go to Launch Hub</a>
+</div>
+
+<div id="page-body">
+<div class="page-head">
+    <div>
+        <h1>
+            <svg class="icon" viewBox="0 0 24 24"><path d="M12 3 22 20H2L12 3z"/><line x1="12" y1="9" x2="12" y2="13.5"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor" stroke="none"/></svg>
+            Findings
+        </h1>
+        <div class="page-sub">Every anomaly flagged across the swarm, aggregated in one triage list, most severe first.</div>
+    </div>
+    <div class="findings-head-actions">
+        <input type="text" id="analyst-name-input" class="form-input" style="width:160px;" placeholder="Your name" oninput="setAnalystName(this.value)">
+        <button class="btn btn-outline" title="Keyboard triage mode: j/k move, x select, a acknowledge, d dismiss" onclick="toggleKeyboardMode()" id="btn-keyboard-mode">
+            Keyboard mode: <strong id="keyboard-mode-state">Off</strong>
+        </button>
+        {% if current_user.role != 'viewer' %}
+        <button class="btn btn-primary" onclick="openManualFindingModal()">+ Add Manual Finding</button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="filter-bar" id="findings-filter-bar">
+    <button class="filter-chip active" data-severity="ALL" onclick="setFindingsSeverityFilter('ALL')">
+        All <span class="count" id="chip-count-ALL">0</span>
+    </button>
+    <button class="filter-chip tone-critical" data-severity="CRITICAL" onclick="setFindingsSeverityFilter('CRITICAL')">
+        Critical <span class="count" id="chip-count-CRITICAL">0</span>
+    </button>
+    <button class="filter-chip tone-high" data-severity="HIGH" onclick="setFindingsSeverityFilter('HIGH')">
+        High <span class="count" id="chip-count-HIGH">0</span>
+    </button>
+    <button class="filter-chip tone-medium" data-severity="MEDIUM" onclick="setFindingsSeverityFilter('MEDIUM')">
+        Medium <span class="count" id="chip-count-MEDIUM">0</span>
+    </button>
+    <button class="filter-chip tone-low" data-severity="LOW" onclick="setFindingsSeverityFilter('LOW')">
+        Low <span class="count" id="chip-count-LOW">0</span>
+    </button>
+    <div class="filter-spacer"></div>
+    <button class="filter-chip" id="chip-approved-only" onclick="toggleFindingsApprovedOnly()">
+        Approved only
+    </button>
+    <button class="filter-chip" id="chip-dismissed" onclick="toggleFindingsShowDismissed()">
+        Show dismissed
+    </button>
+    <button class="filter-chip" id="chip-false-positive" onclick="toggleFindingsShowFalsePositives()">
+        Show false positives
+    </button>
+    <button class="filter-chip" id="chip-excluded" onclick="toggleFindingsShowExcluded()">
+        Show excluded
+    </button>
+</div>
+
+<div class="saved-views-bar" id="saved-views-bar">
+    <span class="saved-views-label">Saved views:</span>
+    <div id="saved-views-list" class="saved-views-list"></div>
+    <button class="btn btn-ghost btn-sm" onclick="saveCurrentView()">+ Save current filters</button>
+</div>
+
+{% if current_user.role != 'viewer' %}
+<div class="bulk-action-bar" id="bulk-action-bar" style="display:none;">
+    <span id="bulk-selected-count">0 selected</span>
+    <div class="bulk-action-buttons">
+        <button class="btn btn-outline btn-sm" onclick="openSaveAsIocModal()">Save as IOC</button>
+        <button class="btn btn-outline btn-sm" onclick="openExportModal()">Export to Report</button>
+        <button class="btn btn-outline btn-sm" onclick="openBulkTagModal()">Tag</button>
+        <button class="btn btn-outline btn-sm" onclick="clusterSelectedFindings()">Merge as duplicate</button>
+        <button class="btn btn-warning btn-sm" onclick="bulkDismissSelected('acknowledged')">Acknowledge</button>
+        <button class="btn btn-danger btn-sm" onclick="bulkDismissSelected('dismissed')">Dismiss</button>
+        <button class="btn btn-danger btn-sm" onclick="bulkDeletePermanently()" title="Permanently delete -- cannot be undone">Delete Permanently</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearFindingsSelection()">Clear</button>
+    </div>
+</div>
+{% endif %}
+
+<div id="findings-list"></div>
+</div>
+
+<!-- ===================== FINDING DETAIL DRAWER ===================== -->
+<div class="drawer-overlay" id="finding-drawer-overlay" onclick="closeFindingDrawer()"></div>
+<div class="drawer" id="finding-drawer">
+    <div class="drawer-head">
+        <div>
+            <h2 id="fd-title">Finding</h2>
+            <div class="drawer-role" id="fd-subtitle">Source agent</div>
+        </div>
+        <button class="btn btn-ghost btn-icon" onclick="closeFindingDrawer()" title="Close">✕</button>
+    </div>
+
+    <div class="fd-lock-banner" id="fd-lock-banner" style="display:none;"></div>
+
+    <div class="fd-badges" id="fd-badges"></div>
+
+    <div class="form-group">
+        <label class="form-label">Justification</label>
+        <div class="code-viewer" id="fd-justification"></div>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Recommended action</label>
+        <div class="code-viewer" id="fd-recommended"></div>
+    </div>
+
+    <div class="form-group" id="fd-pivot-group" style="display:none;">
+        <label class="form-label">Pivot &amp; hunt</label>
+        <div id="fd-pivot-links" class="fd-pivot-links"></div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Confidence</label>
+        <div class="fd-confidence-row">
+            <input type="range" min="0" max="100" id="fd-confidence-slider" oninput="onConfidenceSlide(this.value)">
+            <span id="fd-confidence-value">--</span>%
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Tags</label>
+        <input type="text" id="fd-tags-input" class="form-input" placeholder="Comma-separated tags, Enter to apply" onkeydown="if(event.key==='Enter') applyTagsFromDrawer()">
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">MITRE ATT&amp;CK techniques</label>
+        <select id="fd-mitre-select" class="form-select" multiple size="4"></select>
+        <button class="btn btn-outline btn-sm" style="margin-top:0.4rem;" onclick="applyMitreFromDrawer()">Apply techniques</button>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Assign to</label>
+        <div class="flex gap-2">
+            <input type="text" id="fd-assignee-input" class="form-input" placeholder="Analyst name">
+            <button class="btn btn-outline btn-sm" onclick="applyAssignmentFromDrawer()">Assign</button>
+        </div>
+    </div>
+
+    <div class="form-group" id="fd-enrich-group">
+        <label class="form-label">Agent enrichment</label>
+        <div class="flex gap-2">
+            <button class="btn btn-primary btn-sm" onclick="enrichFinding('deep_analyze')">Deep Analyze</button>
+            <button class="btn btn-outline btn-sm" onclick="enrichFinding('rescan')">Rescan</button>
+            <button class="btn btn-outline btn-sm" onclick="enrichFinding('reputation_lookup')">Reputation lookup</button>
+        </div>
+        <div id="fd-enrich-status" class="fd-enrich-status"></div>
+        <div id="fd-enrich-history" class="fd-enrich-history"></div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Timeline context</label>
+        <button class="btn btn-outline btn-sm" onclick="loadTimelineContext()">Load timeline context</button>
+        <div id="fd-timeline-context" class="fd-timeline-context"></div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Comments</label>
+        <div id="fd-comments-list" class="fd-comments-list"></div>
+        <div class="flex gap-2" style="margin-top:0.4rem;">
+            <input type="text" id="fd-comment-input" class="form-input" placeholder="Add a note..." onkeydown="if(event.key==='Enter') submitFindingComment()">
+            <button class="btn btn-outline btn-sm" onclick="submitFindingComment()">Post</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Audit log</label>
+        <div id="fd-audit-log" class="fd-audit-log"></div>
+    </div>
+
+    <div class="drawer-footer-actions">
+        <button class="btn btn-warning" onclick="dismissFromDrawer('acknowledged')">Acknowledge</button>
+        <button class="btn btn-outline" onclick="dismissFromDrawer('false_positive')">Mark false positive</button>
+        <button class="btn btn-danger" onclick="dismissFromDrawer('dismissed')">Dismiss</button>
+        <button class="btn btn-danger" onclick="deletePermanentlyFromDrawer()" title="Permanently delete -- cannot be undone">Delete Permanently</button>
+    </div>
+</div>
+
+<!-- ===================== ADD MANUAL FINDING MODAL ===================== -->
+<div class="modal-overlay" id="manual-finding-modal-overlay" onclick="if(event.target===this) closeManualFindingModal()">
+    <div class="modal-box">
+        <div class="modal-title">Add Manual Finding</div>
+        <div class="form-group">
+            <label class="form-label">Anomaly type *</label>
+            <input type="text" id="mf-anomaly-type" class="form-input" placeholder="e.g. Suspicious Registry Persistence">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Severity</label>
+            <select id="mf-severity" class="form-select">
+                <option value="Critical">Critical</option>
+                <option value="High" selected>High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Artifact path (optional)</label>
+            <input type="text" id="mf-filepath" class="form-input" placeholder="C:\Users\...\suspicious.dll">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Justification *</label>
+            <textarea id="mf-justification" class="form-textarea" rows="3" placeholder="What did you observe, and why is it suspicious?"></textarea>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Recommended action</label>
+            <textarea id="mf-recommended" class="form-textarea" rows="2"></textarea>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Source / tool (chain of custody note)</label>
+            <input type="text" id="mf-artifact-note" class="form-input" placeholder="e.g. Manual review of NTUSER.DAT with Registry Explorer">
+        </div>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeManualFindingModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitManualFinding()">Add Finding</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== SAVE AS IOC MODAL ===================== -->
+<div class="modal-overlay" id="ioc-modal-overlay" onclick="if(event.target===this) closeSaveAsIocModal()">
+    <div class="modal-box">
+        <div class="modal-title">Save Selected Findings as IOCs</div>
+        <p class="modal-copy" id="ioc-modal-count"></p>
+        <div class="form-group">
+            <label class="form-label">TLP marking</label>
+            <select id="ioc-tlp" class="form-select">
+                <option value="white">TLP:WHITE</option>
+                <option value="green">TLP:GREEN</option>
+                <option value="amber" selected>TLP:AMBER</option>
+                <option value="red">TLP:RED</option>
+            </select>
+        </div>
+        <p class="modal-copy">Indicator type/value is auto-detected from each finding's artifact path or anomaly signature. View and export the full library from the <a href="/iocs">IOC Library</a> page.</p>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeSaveAsIocModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitSaveAsIoc()">Save as IOC</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== EXPORT TO REPORT MODAL ===================== -->
+<div class="modal-overlay" id="export-modal-overlay" onclick="if(event.target===this) closeExportModal()">
+    <div class="modal-box">
+        <div class="modal-title">Export to Report</div>
+        <p class="modal-copy" id="export-modal-count"></p>
+        <div class="form-group">
+            <label class="form-label">Template</label>
+            <select id="export-template" class="form-select">
+                <option value="executive_summary">Executive Summary</option>
+                <option value="technical_forensic" selected>Technical Forensic Report</option>
+                <option value="incident_summary">Incident Summary</option>
+                <option value="legal_hold">Legal Hold Export</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Format</label>
+            <select id="export-format" class="form-select">
+                <option value="markdown" selected>Markdown</option>
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+            </select>
+        </div>
+        <div class="form-group form-checkbox-row">
+            <label><input type="checkbox" id="export-redact-pii"> Redact PII (usernames, emails)</label>
+        </div>
+        <div class="form-group form-checkbox-row">
+            <label><input type="checkbox" id="export-chain-of-custody" checked> Include chain of custody</label>
+        </div>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeExportModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitExportReport()">Generate &amp; Download</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== BULK TAG MODAL ===================== -->
+<div class="modal-overlay" id="bulk-tag-modal-overlay" onclick="if(event.target===this) closeBulkTagModal()">
+    <div class="modal-box">
+        <div class="modal-title">Tag Selected Findings</div>
+        <div class="form-group">
+            <label class="form-label">Tags to add (comma-separated)</label>
+            <input type="text" id="bulk-tag-input" class="form-input" placeholder="e.g. c2, needs-review">
+        </div>
+        <div class="confirm-actions">
+            <button class="btn btn-outline" onclick="closeBulkTagModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitBulkTag()">Apply Tags</button>
+        </div>
+    </div>
+</div>
+
+<div class="keyboard-hint-bar" id="keyboard-hint-bar" style="display:none;">
+    <strong>Keyboard triage:</strong> j/k move &middot; x select &middot; a acknowledge &middot; d dismiss &middot; Enter open &middot; Esc close
+</div>
+{% endblock %}

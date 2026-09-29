@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="empty-state-page" id="no-investigation-banner" style="display:none;">
+    <svg class="icon" viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+    <h2>No investigation selected</h2>
+    <p>Go to the Launch Hub to start a new investigation or resume an existing staging session to inspect its agent pool here.</p>
+    <a href="/" class="btn btn-primary">Go to Launch Hub</a>
+</div>
+
+<div id="page-body">
+<div class="page-head">
+    <div>
+        <h1>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+            Agent Control Center
+        </h1>
+        <div class="page-sub">Inspect any worker node, override its instructions, and drive the HITL loop directly.</div>
+    </div>
+</div>
+
+<div class="agent-layout">
+    <!-- LEFT SIDEBAR: AGENT LIST -->
+    <div class="panel" style="padding: var(--sp-4);">
+        <div class="panel-title-sm text-dim" style="margin-bottom: var(--sp-3);">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg>
+            Swarm Worker Nodes
+        </div>
+        <div class="agent-list" id="agent-sidebar-list"></div>
+    </div>
+
+    <!-- MAIN PANEL: AGENT CONTROL CENTER -->
+    <div>
+        <div class="panel" id="agent-main-card">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title" id="selected-agent-title" style="color: var(--text-primary);">Select an agent node</div>
+                    <div class="panel-meta" id="selected-agent-role">Click any worker node on the left to inspect and customize it.</div>
+                </div>
+                <div id="selected-agent-state-badge" class="state-badge">
+                    <span class="state-dot GRAY"></span> IDLE
+                </div>
+            </div>
+
+            <!-- INSTRUCTION CUSTOMIZATION ENGINE -->
+            <div class="panel-nested subsection">
+                <div class="subsection-head accent-teal">
+                    <svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2"/></svg>
+                    Instruction Customization &mdash; System Prompt Override
+                </div>
+                <div class="form-group">
+                    <textarea id="agent-system-prompt" class="form-textarea" rows="4" placeholder="Customize or override the system prompt for this agent..."></textarea>
+                </div>
+                <div class="flex" style="justify-content: flex-end;">
+                    <button class="btn btn-primary" onclick="savePromptOverride()">Save Override</button>
+                </div>
+            </div>
+
+            <!-- DIRECT INTERCOM INTERFACE & HITL LOOP PANEL -->
+            <div class="panel-nested">
+                <div class="subsection-head accent-yellow">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5z"/></svg>
+                    Direct Intercom &amp; HITL Loop
+                </div>
+
+                <div class="split-view">
+                    <div>
+                        <label class="form-label">Raw parsed tool output</label>
+                        <div class="code-viewer placeholder" id="agent-raw-viewer">Select an agent node to view parsed evidence data.</div>
+                    </div>
+                    <div>
+                        <label class="form-label">Proposed AI analysis &amp; anomalies</label>
+                        <div class="code-viewer placeholder" id="agent-ai-viewer">Select an agent node to view the LLM analysis report.</div>
+                    </div>
+                </div>
+
+                <!-- HITL INTERACTION FORM -->
+                <div id="agent-hitl-form-area" style="margin-top: var(--sp-5); border-top: 1px solid var(--border); padding-top: var(--sp-5); display:none;">
+                    <div class="hitl-banner" style="margin-bottom: var(--sp-4);">
+                        <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                        <div class="hitl-banner-copy">Action required &mdash; this sub-agent is awaiting analyst steering approval.</div>
+                    </div>
+
+                    <div class="hitl-inline">
+                        <button class="btn btn-success btn-lg" onclick="submitApproveFromPage()">
+                            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 12 9 18 20 6"/></svg>
+                            Approve
+                        </button>
+                        <div class="form-group">
+                            <label class="form-label">Feedback for re-evaluation</label>
+                            <input type="text" id="agent-user-feedback" class="form-input" placeholder="Inject feedback/instructions for the LLM re-evaluation loop...">
+                        </div>
+                        <button class="btn btn-warning btn-lg" onclick="submitReviseFromPage()">
+                            <svg class="icon" viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 6.3 6.3L4 8.6"/><polyline points="4 3 4 9 10 9"/></svg>
+                            Revise
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

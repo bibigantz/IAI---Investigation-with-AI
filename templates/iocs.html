@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="page-body">
+<div class="page-head">
+    <div>
+        <h1>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7" x2="12" y2="13"/><circle cx="12" cy="16.5" r="0.6" fill="currentColor" stroke="none"/></svg>
+            IOC Library
+        </h1>
+        <div class="page-sub">Indicators saved off findings across all investigations. Export as STIX 2.1, a MISP-shaped event, CSV, or JSON.</div>
+    </div>
+    <div class="findings-head-actions">
+        <a class="btn btn-outline" href="/api/iocs/export?format=stix">Export STIX 2.1</a>
+        <a class="btn btn-outline" href="/api/iocs/export?format=misp">Export MISP JSON</a>
+        <a class="btn btn-outline" href="/api/iocs/export?format=csv">Export CSV</a>
+    </div>
+</div>
+
+<table class="ioc-table">
+    <thead>
+        <tr>
+            <th>Type</th><th>Value</th><th>TLP</th><th>Source finding</th><th>Added by</th><th>Added at</th><th></th>
+        </tr>
+    </thead>
+    <tbody id="ioc-table-body"></tbody>
+</table>
+<div class="empty-state" id="ioc-empty-state" style="display:none;">No IOCs saved yet. Save findings as IOCs from the Findings page.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", fetchIocs);
+</script>
+{% endblock %}

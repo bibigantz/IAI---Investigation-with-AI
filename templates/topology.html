@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="empty-state-page" id="no-investigation-banner" style="display:none;">
+    <svg class="icon" viewBox="0 0 24 24" width="48" height="48"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><line x1="8.1" y1="7.2" x2="15.9" y2="7.2"/><line x1="7" y1="8.2" x2="11" y2="15.8"/><line x1="17" y1="8.2" x2="13" y2="15.8"/></svg>
+    <h2>No investigation selected</h2>
+    <p>Go to the Launch Hub to start a new investigation or resume an existing staging session to see its live topology here.</p>
+    <a href="/" class="btn btn-primary">Go to Launch Hub</a>
+</div>
+
+<div id="page-body">
+<div class="page-head">
+    <div>
+        <h1>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><line x1="8.1" y1="7.2" x2="15.9" y2="7.2"/><line x1="7" y1="8.2" x2="11" y2="15.8"/><line x1="17" y1="8.2" x2="13" y2="15.8"/></svg>
+            Dynamic Topology
+        </h1>
+        <div class="page-sub">Live agent DAG &mdash; click any node to inspect its findings or act on a pending approval.</div>
+    </div>
+    <div class="legend">
+        <span class="legend-item"><span class="state-dot GREEN"></span> Active</span>
+        <span class="legend-item"><span class="state-dot YELLOW"></span> Action required</span>
+        <span class="legend-item"><span class="state-dot BLUE"></span> Approved</span>
+        <span class="legend-item"><span class="state-dot GRAY"></span> Idle</span>
+    </div>
+</div>
+
+<div class="panel topology-panel">
+    <div class="canvas-controls">
+        <button class="btn btn-outline btn-icon" onclick="zoomIn()" title="Zoom in">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="20" y2="20"/><line x1="7" y1="10" x2="13" y2="10"/><line x1="10" y1="7" x2="10" y2="13"/></svg>
+        </button>
+        <button class="btn btn-outline btn-icon" onclick="zoomOut()" title="Zoom out">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><line x1="15" y1="15" x2="20" y2="20"/><line x1="7" y1="10" x2="13" y2="10"/></svg>
+        </button>
+        <button class="btn btn-outline btn-icon" onclick="resetZoom()" title="Reset view">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="btn btn-outline btn-icon" id="btn-maximize" onclick="toggleMaximize()" title="Maximize / minimize">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+        </button>
+    </div>
+
+    <div id="topology-canvas">
+        <svg id="svg-dag" width="100%" height="100%" style="user-select: none;">
+            <g id="viewport"></g>
+        </svg>
+    </div>
+</div>
+
+<!-- HITL INSPECTION DRAWER -->
+<div class="drawer-overlay" id="node-modal-overlay" onclick="closeModal()"></div>
+<div class="drawer" id="node-modal">
+    <div class="drawer-head">
+        <div>
+            <h2 id="modal-agent-name">Agent node</h2>
+            <div class="drawer-role" id="modal-agent-role">Role</div>
+        </div>
+        <button class="btn btn-ghost btn-icon" onclick="closeModal()" title="Close">
+            <svg class="icon" viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+        </button>
+    </div>
+
+    <div class="hitl-banner" id="modal-hitl-banner" style="display:none;">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        <div>
+            <div class="hitl-banner-title">Paused &mdash; verification required</div>
+            <div class="hitl-banner-copy">This sub-agent completed its localized analysis and is awaiting your steering decision.</div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Proposed AI analysis &amp; anomalies</label>
+        <div class="code-viewer placeholder" id="modal-ai-report" style="height:200px;">Awaiting execution data...</div>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label">Raw parsed tool data (metadata / inventory)</label>
+        <div class="code-viewer placeholder" id="modal-raw-data" style="height:180px;">No raw data available</div>
+    </div>
+
+    <!-- HITL INTERACTION ELEMENTS -->
+    <div class="hitl-controls" id="modal-hitl-controls" style="display:none;">
+        <button class="btn btn-success btn-block btn-lg" onclick="submitApproveFromModal()">
+            <svg class="icon" viewBox="0 0 24 24"><polyline points="4 12 9 18 20 6"/></svg>
+            Approve &amp; advance
+        </button>
+
+        <div class="form-group">
+            <label class="form-label">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4V5z"/></svg>
+                Feedback for re-evaluation
+            </label>
+            <textarea id="modal-feedback-input" class="form-textarea" rows="3" placeholder="Enter instructions for the agent's LLM re-evaluation loop..."></textarea>
+        </div>
+        <button class="btn btn-warning btn-block" onclick="submitReviseFromModal()">
+            <svg class="icon" viewBox="0 0 24 24"><path d="M20 11A8 8 0 1 0 6.3 6.3L4 8.6"/><polyline points="4 3 4 9 10 9"/></svg>
+            Revise with feedback
+        </button>
+    </div>
+</div>
+</div>
+{% endblock %}

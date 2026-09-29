@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="empty-state-page">
+    <svg class="icon" viewBox="0 0 24 24" width="48" height="48"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+    <h2>{{ message or "Admin access required" }}</h2>
+    <p>Your account doesn't have permission to perform that action. Ask an administrator if you need access.</p>
+    <a href="/" class="btn btn-primary">Back to dashboard</a>
+</div>
+{% endblock %}

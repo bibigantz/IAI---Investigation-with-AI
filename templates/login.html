@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in &middot; IAI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="auth-page">
+        <div class="auth-card">
+            <div class="brand-logo" style="margin: 0 auto var(--sp-4);">IAI</div>
+            <h1 class="auth-title">Investigate with AI</h1>
+            <p class="auth-sub">Sign in to continue to the DFIR platform.</p>
+
+            {% if error %}
+            <div class="auth-error">{{ error }}</div>
+            {% endif %}
+
+            <form method="post" class="auth-form">
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" name="username" class="form-input" autofocus required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" name="password" class="form-input" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block btn-lg">Sign in</button>
+            </form>
+
+            <p class="auth-hint">Default first-run account: <code>admin</code> / <code>changeme</code> -- you'll be required to set a new password immediately after signing in.</p>
+        </div>
+    </div>
+</body>
+</html>
