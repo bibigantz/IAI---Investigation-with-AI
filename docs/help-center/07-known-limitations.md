@@ -76,14 +76,21 @@ that this platform deliberately doesn't try to stand up itself.
   [File & Malware Analysis](04-file-malware-analysis.md#malware-overview).
 - **LLM analysis** — every agent's analysis step, and Findings-page Deep
   Enrichment, depend on the single LLM endpoint configured on the
-  Management page (defaults to local Ollama). If it's unreachable, every
-  agent's LLM step fails the same way.
+  Management page (defaults to a local Open WebUI instance). If it's
+  unreachable, every agent's LLM step fails the same way — use that page's
+  **Test Connection** button to check reachability before assuming
+  something else is broken.
 - **"Query SIEM" pivot link** — only appears if `SIEM_QUERY_URL_TEMPLATE`
   is set. No bundled SIEM integration exists, and none is planned per this
   deployment's offline-environment requirement.
 - **MISP export** — produces a MISP-shaped JSON file for manual import.
   There is no live push to a running MISP instance, and none is planned
   (explicitly out of scope for this platform's offline deployment target).
+- **The Gemini / Google AI Studio preset on the LLM Provider Configuration
+  page is a deliberate, explicit exception to "offline by default"** — it
+  exists purely so you can test agent behavior against a known-good cloud
+  model while you have connectivity, not for real engagement work. Selecting
+  it shows an inline warning; it isn't hidden or silently allowed.
 
 ## Things that are best-effort, not exact — and why they'd need a bigger change to fix {#things-that-are-best-effort}
 

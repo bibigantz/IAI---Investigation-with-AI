@@ -191,30 +191,77 @@ immediately, not stored broken.
 Every agent's analysis step, and the Findings page's "Deep Analyze"
 enrichment, read this single configuration.
 
-### Step-by-step {#llm-config-steps}
+### Provider presets {#llm-provider-presets}
 
-1. Go to **AI & Agent Orchestration → LLM Provider Configuration**.
-2. Set **Base URL** to any OpenAI-compatible chat completions endpoint.
-   Defaults to a local Ollama instance (`http://localhost:11434/v1`) —
-   this platform is designed to run with **zero external network access**
-   by default.
-3. Set **Model name** to whatever model that endpoint serves (e.g.
-   `llama3.1`, or a hosted model name if you're pointing at a cloud
-   provider instead).
-4. **API key** — leave blank to keep the current key. Local Ollama accepts
-   any placeholder value here; a real cloud provider needs a real key.
-5. **Context limit** — the character cap applied to payloads sent to the
-   LLM (agent-side truncation, not a token-accurate count).
-6. Save.
+A **Provider preset** dropdown at the top of this form is a convenience
+only — it fills in Provider label/Base URL/Model name for a known provider
+so you don't have to type them from memory. It never touches the API key
+field (that's always your own secret to paste), and switching it doesn't
+save anything by itself — you still click Save Configuration.
 
-![LLM Provider Configuration form filled in for a local Ollama endpoint](placeholder-llm-config.png)
-*Figure 5: The LLM Provider Configuration form — Base URL `http://localhost:11434/v1`, model `llama3.1:8b`.*
+- **Open WebUI (offline)** — the default, and the only preset intended for
+  real investigation work. Zero external network access.
+- **Google AI Studio / Gemini (online — for testing)** — points at
+  Google's real Gemini API (`generativelanguage.googleapis.com`). Selecting
+  this shows an explicit warning: it requires outbound internet access and
+  makes real calls to Google's servers on every single agent analysis step
+  and every enrichment. Use this only to quickly sanity-check agent
+  behavior against a known-good cloud model while you have connectivity —
+  switch back to Open WebUI before running anything on an actual
+  air-gapped engagement. Get a free key at `aistudio.google.com/apikey`.
+- **Custom / other OpenAI-compatible endpoint** — leaves whatever you've
+  already typed alone; for any other provider (a different local model
+  server, a different cloud provider) not covered by the two presets above.
+
+### Step-by-step: pointing this at your offline Open WebUI instance {#llm-config-steps}
+
+This platform's supported offline AI provider is **Open WebUI** — its
+OpenAI-compatible API is what every agent's analysis step and the
+Findings-page "Deep Analyze" enrichment call.
+
+1. In Open WebUI, go to **Settings → Account → API Keys** and generate a
+   key.
+2. Go to **AI & Agent Orchestration → LLM Provider Configuration** in this
+   platform.
+3. Set **Base URL** to your Open WebUI instance's address plus `/api`
+   (e.g. `http://localhost:3000/api` for the default Docker quick-start —
+   the exact host/port depends entirely on how *your* instance was
+   deployed; check whatever URL you actually use to reach Open WebUI in a
+   browser and append `/api` to it).
+4. Set **Model name** to exactly match a model registered in that Open
+   WebUI instance — open Open WebUI's own model picker if you're not sure
+   of the exact name.
+5. Paste the API key from step 1 into **API key**. Unlike Ollama (which
+   accepts any placeholder value if you're pointing directly at it instead
+   of through Open WebUI), Open WebUI actually validates this key — a
+   wrong or missing key fails every single agent analysis call.
+6. **Context limit** — the character cap applied to payloads sent to the
+   LLM (agent-side truncation, not a token-accurate count). Leave at
+   30000 unless you have a specific reason to change it.
+7. Click **Save Configuration**, then click **Test Connection** —sends one
+   real, minimal chat request to the endpoint you just configured (using
+   whatever's currently in the form, saved or not) and reports back
+   success with the reply + latency, or the exact connection error. Do
+   this every time you change the URL, key, or model — don't wait to find
+   out it's broken mid-investigation.
+
+![LLM Provider Configuration form filled in for a local Open WebUI endpoint, with a successful Test Connection result showing below the buttons](placeholder-llm-config.png)
+*Figure 5: The LLM Provider Configuration form — Base URL `http://localhost:3000/api`, model `llama3.1:8b`, and a green "✓ Reachable — responded in 0.6s" result under Test Connection.*
 
 > ℹ️ **Info:** There is exactly **one** active provider configuration at a
 > time — no per-agent overrides, and no automatic fallback chain between
 > multiple providers. If the configured endpoint is unreachable, every
 > agent's LLM analysis step fails the same way (degrades to an error
-> result, logged, doesn't crash the run).
+> result, logged, doesn't crash the run) — which is exactly why Test
+> Connection exists: to catch that before it happens mid-run.
+
+> ⚠️ **Warning — Open WebUI's own port and API path vary by how it was
+> installed** (Docker quick-start defaults to port 3000 on the host; a
+> native `pip install` defaults to port 8080; a reverse-proxied deployment
+> could be anything). The `/api` path is what Open WebUI itself documents
+> as its OpenAI-compatible base — if Test Connection fails with a 404-style
+> error against a URL you're sure is otherwise correct, double check that
+> suffix against your specific Open WebUI version's docs.
 
 > ⚠️ **Warning — this only configures the LLM.** Ghidra, CAPA, and Cuckoo
 > are separate MCP tool servers with their own environment-variable

@@ -132,9 +132,11 @@ underlying agent/raw data to re-analyze for those).
 > 🔧 **Troubleshooting:** Enrichment uses whichever LLM provider is
 > configured on the Management page's LLM tab
 > (see [System Management](06-system-management.md#llm-provider-configuration)).
-> If it fails immediately, check that provider is actually reachable —
-> a local Ollama endpoint that isn't running will fail every enrichment
-> call the same way it would fail every original agent analysis call.
+> If it fails immediately, use that page's **Test Connection** button to
+> check the provider is actually reachable before assuming enrichment
+> itself is broken — an unreachable Open WebUI endpoint fails every
+> enrichment call the same way it would fail every original agent
+> analysis call.
 
 ---
 

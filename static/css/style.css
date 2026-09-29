@@ -4,7 +4,11 @@
    flat surfaces with real elevation, glass reserved for true overlays.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap');
+/* No @import of Google Fonts here on purpose -- this platform is designed to
+   run fully offline (see --font-sans/--font-mono below), and a webfont CDN
+   import is exactly the kind of thing that silently phones home on every
+   page load on an air-gapped machine. Falls back to each OS's own system
+   UI font (Segoe UI on Windows) and system monospace font instead. */
 
 :root {
     /* ---- surfaces ---- */

@@ -1,8 +1,12 @@
 """Central place every agent (and the Findings-page enrichment helper) reads
 its LLM endpoint from, backed by the Management page's LLM Provider config
-(db.models.LlmProviderConfig, a singleton row). Defaults to a local Ollama
-OpenAI-compatible endpoint so a fresh install works with zero external network
-access -- this platform is expected to run fully offline."""
+(db.models.LlmProviderConfig, a singleton row). Defaults to a local Open
+WebUI instance's OpenAI-compatible API so a fresh install works with zero
+external network access -- this platform is expected to run fully offline
+against the offline AI stack Open WebUI provides. The fallback below only
+matters if the DB row is somehow missing (e.g. a hand-rolled DB not created
+via db.database.init_db()) -- the real, admin-editable defaults live on the
+LlmProviderConfig model itself."""
 from typing import Dict
 
 
@@ -23,9 +27,9 @@ def get_active_llm_config() -> Dict[str, object]:
     except Exception:
         pass
     return {
-        "provider_label": "Local Ollama",
-        "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama",
+        "provider_label": "Open WebUI (offline)",
+        "base_url": "http://localhost:3000/api",
+        "api_key": "replace-with-your-openwebui-api-key",
         "model_name": "llama3.1",
         "context_limit": 30000,
     }

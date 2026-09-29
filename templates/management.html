@@ -87,17 +87,41 @@
         {% elif active_tab == 'llm' %}
         <div class="panel" id="mgmt-llm-panel">
             <div class="panel-title">LLM Provider Configuration</div>
-            <p class="panel-meta">Every agent's analysis step and the Findings-page "Deep Analyze" enrichment action read this config. Defaults to a local Ollama endpoint so the platform runs with zero external network access.</p>
+            <p class="panel-meta">Every agent's analysis step and the Findings-page "Deep Analyze" enrichment action read this config. Defaults point at a local Open WebUI instance's OpenAI-compatible API so the platform runs with zero external network access.</p>
+            <div class="callout callout-info" style="margin-bottom: var(--sp-4);" id="llm-preset-help-openwebui">
+                <strong>Setting up Open WebUI as the offline provider:</strong>
+                <ol style="margin: 0.4rem 0 0 1.1rem; padding: 0;">
+                    <li>In Open WebUI, go to <strong>Settings → Account → API Keys</strong> and generate a key.</li>
+                    <li>Base URL is Open WebUI's own address plus <code>/api</code> (e.g. <code>http://localhost:3000/api</code> for the default Docker quick-start — adjust the host/port to match how your instance was actually deployed).</li>
+                    <li>Model name must exactly match a model registered in that Open WebUI instance (check its model picker).</li>
+                </ol>
+            </div>
+            <div class="callout callout-warning" style="margin-bottom: var(--sp-4); display:none;" id="llm-preset-help-gemini">
+                <strong>Google AI Studio / Gemini — for testing only, requires internet access.</strong>
+                <ol style="margin: 0.4rem 0 0 1.1rem; padding: 0;">
+                    <li>Get a free API key at <code>aistudio.google.com/apikey</code> (Google AI Studio).</li>
+                    <li>Paste it into <strong>API key</strong> below.</li>
+                    <li>This makes real outbound HTTPS calls to Google's servers on every agent analysis and every enrichment — <strong>not suitable for an offline/air-gapped deployment.</strong> Switch back to the Open WebUI preset for real investigations.</li>
+                </ol>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Provider preset</label>
+                <select id="llm-preset-select" class="form-select" onchange="applyLlmPreset(this.value)">
+                    <option value="openwebui">Open WebUI (offline)</option>
+                    <option value="gemini">Google AI Studio / Gemini (online — for testing)</option>
+                    <option value="custom">Custom / other OpenAI-compatible endpoint</option>
+                </select>
+            </div>
             <div class="form-group">
                 <label class="form-label">Provider label</label>
                 <input type="text" id="llm-provider-label" class="form-input">
             </div>
             <div class="form-group">
                 <label class="form-label">Base URL (OpenAI-compatible endpoint)</label>
-                <input type="text" id="llm-base-url" class="form-input" placeholder="http://localhost:11434/v1">
+                <input type="text" id="llm-base-url" class="form-input" placeholder="http://localhost:3000/api">
             </div>
             <div class="form-group">
-                <label class="form-label">API key <span class="form-hint">(leave blank to keep the current key; local Ollama accepts any placeholder value)</span></label>
+                <label class="form-label">API key <span class="form-hint">(leave blank to keep the current key -- Open WebUI validates this, unlike Ollama, so it must be a real key generated there; Gemini/Google AI Studio always requires a real key)</span></label>
                 <input type="password" id="llm-api-key" class="form-input" placeholder="Currently set">
             </div>
             <div class="form-group">
@@ -109,7 +133,9 @@
                 <input type="number" id="llm-context-limit" class="form-input">
             </div>
             <button class="btn btn-primary" onclick="saveLlmConfig()">Save Configuration</button>
+            <button class="btn btn-outline" onclick="testLlmConfig()">Test Connection</button>
             <p class="form-hint" id="llm-updated-hint" style="margin-top:0.6rem;"></p>
+            <p class="form-hint" id="llm-test-result" style="margin-top:0.4rem;"></p>
         </div>
 
         {% elif active_tab == 'retention' %}

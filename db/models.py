@@ -181,14 +181,21 @@ class LlmProviderConfig(Base):
     """Singleton (id=1) row holding the LLM endpoint every agent's
     BaseHITLAgent and the Findings-page enrichment helper read from, instead
     of the hardcoded Gemini key/URL that shipped originally. Defaults point at
-    a local Ollama OpenAI-compatible endpoint so this works with zero external
-    network access."""
+    a local Open WebUI instance's OpenAI-compatible API (the offline AI
+    provider this deployment actually uses) so this works with zero external
+    network access. Open WebUI's port/base path can vary by how it was
+    installed (Docker vs. pip) -- these are the common Docker quick-start
+    values, not a guarantee; an admin must confirm/adjust them for their own
+    deployment on the Management page's LLM Provider Configuration tab, and
+    the api_key default below is a placeholder that must be replaced with a
+    real key generated in Open WebUI (Settings -> Account -> API Keys) --
+    unlike Ollama, Open WebUI actually validates it."""
     __tablename__ = "llm_provider_config"
 
     id = Column(Integer, primary_key=True)
-    provider_label = Column(String, default="Local Ollama")
-    base_url = Column(String, default="http://localhost:11434/v1")
-    api_key = Column(String, default="ollama")
+    provider_label = Column(String, default="Open WebUI (offline)")
+    base_url = Column(String, default="http://localhost:3000/api")
+    api_key = Column(String, default="replace-with-your-openwebui-api-key")
     model_name = Column(String, default="llama3.1")
     context_limit = Column(Integer, default=30000)
     updated_at = Column(String, nullable=True)

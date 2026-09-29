@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 from datetime import datetime, timezone
 from flask import render_template, jsonify, request
 from werkzeug.security import generate_password_hash
@@ -172,6 +174,42 @@ def register_management_routes(app):
             row.updated_at = datetime.now(timezone.utc).isoformat()
         bridge.log_event("MANAGEMENT", f"LLM provider config updated by {current_user()['username']}", level="WARN")
         return jsonify({"success": True})
+
+    @app.route("/api/management/llm-config/test", methods=["POST"])
+    def test_llm_config():
+        """Sends one minimal real chat completion request to the configured
+        (or not-yet-saved candidate, if provided) endpoint -- so an admin can
+        verify an offline LLM provider is actually reachable before, or
+        after, saving, rather than discovering a broken endpoint only when
+        an agent run fails partway through an investigation."""
+        data = request.json or {}
+        with get_session() as session:
+            row = session.get(LlmProviderConfig, 1)
+            base_url = data.get("base_url") or row.base_url
+            api_key = data.get("api_key") or row.api_key
+            model_name = data.get("model_name") or row.model_name
+
+        async def _probe():
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": "Reply with exactly one word: OK"}],
+                    max_tokens=5,
+                ),
+                timeout=15,
+            )
+            return response.choices[0].message.content
+
+        start = time.time()
+        try:
+            reply = asyncio.run(_probe())
+            return jsonify({"success": True, "reply": reply, "elapsed_seconds": round(time.time() - start, 2)})
+        except asyncio.TimeoutError:
+            return jsonify({"success": False, "error": "Timed out after 15s -- endpoint unreachable or model too slow to respond."}), 502
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 502
 
     # ==========================================================================
     # YARA RULES

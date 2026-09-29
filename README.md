@@ -40,7 +40,7 @@ Master_Executive_Intelligence_Report.json  (downloadable from the dashboard)
 
 - **Windows** (the collector and several parsers use Windows-only APIs — VSS, ADS, registry hives, `ctypes.windll`).
 - **Python 3.10+**
-- A **Gemini API key** (`GEMINI_API_KEY` env var) — every LLM-backed agent calls Gemini via its OpenAI-compatible endpoint. *A fallback key is currently hardcoded in `core/base_agent.py` for convenience; treat it as temporary and set your own.*
+- An **LLM endpoint every agent calls via an OpenAI-compatible API** — this platform is designed to run fully offline, with **[Open WebUI](https://docs.openwebui.com/)** as the supported local AI provider (Open WebUI itself commonly sits in front of Ollama or another local backend, and exposes an OpenAI-compatible API of its own). There's nothing to set via an env var or before first boot: sign in, go to **System Management → AI & Agent Orchestration → LLM Provider Configuration**, and point it at your Open WebUI instance's URL + an API key generated there (Settings → Account → API Keys). Use that page's **Test Connection** button to verify before relying on it. A cloud provider (OpenAI, etc.) works the same way if you're not running offline — just paste its real base URL/key instead.
 - Optional, only if you want the corresponding analysis to actually run instead of gracefully reporting "not available":
   - **Volatility3** (`pip install volatility3`, already in `requirements.txt`) + the `vol` CLI on `PATH` — needed for Memory Analysis to parse a real memory image.
   - **Ghidra MCP / CAPA MCP / Cuckoo v3 MCP** servers — needed for File Analysis's Reverse Engineering and Dynamic Sandbox steps to do more than report "server not reachable." See [Configuring the File Analysis MCP servers](#configuring-the-file-analysis-mcp-servers) below.
@@ -51,11 +51,10 @@ Everything else (the forensic parser binaries — PECmd, AmcacheParser, AppCompa
 
 ```bash
 pip install -r requirements.txt
-set GEMINI_API_KEY=your-key-here          # PowerShell: $env:GEMINI_API_KEY="your-key-here"
 python app.py
 ```
 
-Open **http://127.0.0.1:5000/**.
+Open **http://127.0.0.1:5000/** and sign in with the first-run account — username `admin`, password `changeme` — you'll be forced to set a real password immediately. Then configure your LLM provider (see Requirements above) before launching your first investigation.
 
 ---
 

@@ -2840,6 +2840,33 @@ async function submitBaselineImport() {
 
 // ---- LLM Provider Configuration ----
 
+// Base URLs that identify a known preset, purely for auto-selecting the
+// dropdown on load -- saving/testing always uses whatever's actually in the
+// text fields, never a value silently substituted in from this table.
+const LLM_PRESETS = {
+    openwebui: { label: "Open WebUI (offline)", base_url: "http://localhost:3000/api", model_name: "llama3.1" },
+    gemini: { label: "Gemini (Google AI Studio -- testing)", base_url: "https://generativelanguage.googleapis.com/v1beta/openai/", model_name: "gemini-2.5-flash" },
+};
+
+function applyLlmPreset(preset) {
+    document.getElementById("llm-preset-help-openwebui").style.display = preset === "openwebui" ? "block" : "none";
+    document.getElementById("llm-preset-help-gemini").style.display = preset === "gemini" ? "block" : "none";
+    if (preset === "custom") return; // leave whatever the admin already typed alone
+    const p = LLM_PRESETS[preset];
+    if (!p) return;
+    document.getElementById("llm-provider-label").value = p.label;
+    document.getElementById("llm-base-url").value = p.base_url;
+    document.getElementById("llm-model-name").value = p.model_name;
+    // API key is never auto-filled -- always the admin's own secret to paste.
+}
+
+function detectLlmPreset(baseUrl) {
+    for (const [key, p] of Object.entries(LLM_PRESETS)) {
+        if (baseUrl === p.base_url) return key;
+    }
+    return "custom";
+}
+
 async function fetchLlmConfig() {
     try {
         const res = await fetch("/api/management/llm-config");
@@ -2850,6 +2877,11 @@ async function fetchLlmConfig() {
         document.getElementById("llm-context-limit").value = data.context_limit || 30000;
         document.getElementById("llm-api-key").placeholder = data.api_key_set ? "Currently set (leave blank to keep)" : "Not set";
         document.getElementById("llm-updated-hint").textContent = data.updated_at ? `Last updated ${data.updated_at}` : "";
+
+        const preset = detectLlmPreset(data.base_url || "");
+        document.getElementById("llm-preset-select").value = preset;
+        document.getElementById("llm-preset-help-openwebui").style.display = preset === "openwebui" ? "block" : "none";
+        document.getElementById("llm-preset-help-gemini").style.display = preset === "gemini" ? "block" : "none";
     } catch (e) {
         console.error("Fetch LLM config error:", e);
     }
@@ -2878,6 +2910,32 @@ async function saveLlmConfig() {
         }
     } catch (e) {
         showToast("Request failed.", "error");
+    }
+}
+
+async function testLlmConfig() {
+    const resultEl = document.getElementById("llm-test-result");
+    resultEl.textContent = "Testing connection...";
+    const body = {
+        base_url: document.getElementById("llm-base-url").value.trim(),
+        model_name: document.getElementById("llm-model-name").value.trim(),
+    };
+    const apiKey = document.getElementById("llm-api-key").value.trim();
+    if (apiKey) body.api_key = apiKey; // test the not-yet-saved key if one was just typed
+    try {
+        const res = await fetch("/api/management/llm-config/test", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.success) {
+            resultEl.textContent = `✓ Reachable -- responded in ${data.elapsed_seconds}s ("${data.reply}").`;
+            showToast("LLM endpoint is reachable.", "success");
+        } else {
+            resultEl.textContent = "✗ " + data.error;
+            showToast("LLM connection test failed.", "error");
+        }
+    } catch (e) {
+        resultEl.textContent = "✗ Test request failed.";
     }
 }
 
