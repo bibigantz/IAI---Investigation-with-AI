@@ -80,6 +80,8 @@ infrastructure this codebase can't manufacture on its own.
   those consoles their own fixed `--console-*` color variables in
   `static/css/style.css` that don't change with the theme.
 
+- **Memory Analysis could silently reach out to the internet on an air-gapped machine.** The `vol` CLI defaults to fetching a missing ISF symbol table from `downloads.volatilityfoundation.org` the moment it meets a Windows build it doesn't have cached locally -- exactly the kind of thing that hangs/retries pointlessly with no network. `agents/memory_analysis/volatility_runner.py` now always passes `--offline`, so it only ever uses whatever symbols are already cached locally, same as every other external tool in this codebase degrading gracefully instead of calling out.
+
 ## Things that depend on infrastructure this platform doesn't bundle {#things-that-need-external-infra}
 
 These aren't bugs to fix in this codebase — they need something outside it
@@ -142,6 +144,16 @@ that this platform deliberately doesn't try to stand up itself.
 
 ## Platform-wide architectural notes worth knowing {#platform-wide-notes}
 
+- **Sysinternals `autorunsc.exe` may still attempt a network round-trip per
+  autorun entry, and this codebase can't turn it off.** It verifies each
+  binary's Authenticode signature via the Windows Crypto API, which by
+  default tries an online CRL/OCSP revocation check per certificate — an
+  OS-level behavior, not a flag `collectors/collector.py` passes or could
+  suppress from Python. On a genuinely air-gapped machine this just means
+  each check times out and falls through rather than failing the scan
+  (the same degrade-gracefully contract as every other external-tool
+  failure here) — slower, not broken, and no credential/hash data leaves
+  the machine either way.
 - **Only two orchestration levels run sub-agents concurrently** (Memory
   Analysis stage 2, File Analysis stage 2) — every other father/sub-master
   level runs its children strictly sequentially. In SUPERVISED mode, that

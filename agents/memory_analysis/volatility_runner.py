@@ -130,7 +130,14 @@ class SubprocessVolatilityBackend(VolatilityBackend):
     def run_plugin(self, image_path: Path, plugin: str, args: Optional[List[str]] = None,
                     output_dir: Optional[Path] = None, timeout: int = 300) -> List[Dict[str, Any]]:
         cmd = ["python", "-m", "volatility3.cli"] if self.vol_binary == "__module__" else [self.vol_binary]
-        cmd += ["-q", "-r", "json", "-f", str(image_path)]
+        # --offline: Volatility3 otherwise tries to fetch missing ISF symbol
+        # tables from downloads.volatilityfoundation.org on an unrecognized
+        # OS build -- this platform is designed to run fully offline, so
+        # that reach-out should never happen (it would just hang/fail slowly
+        # on an air-gapped analyst machine). Falls back to whatever symbols
+        # are already cached locally, same as every other external tool in
+        # this codebase degrading gracefully instead of calling out.
+        cmd += ["-q", "-r", "json", "--offline", "-f", str(image_path)]
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
             cmd += ["-o", str(output_dir)]
