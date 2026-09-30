@@ -18,7 +18,7 @@
         <div class="page-sub">Every anomaly flagged across the swarm, aggregated in one triage list, most severe first.</div>
     </div>
     <div class="findings-head-actions">
-        <input type="text" id="analyst-name-input" class="form-input" style="width:160px;" placeholder="Your name" oninput="setAnalystName(this.value)">
+        <input type="text" id="analyst-name-input" class="form-input" style="width:160px; max-width: 100%;" placeholder="Your name" oninput="setAnalystName(this.value)">
         <button class="btn btn-outline" title="Keyboard triage mode: j/k move, x select, a acknowledge, d dismiss" onclick="toggleKeyboardMode()" id="btn-keyboard-mode">
             Keyboard mode: <strong id="keyboard-mode-state">Off</strong>
         </button>
