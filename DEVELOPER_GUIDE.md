@@ -2,7 +2,7 @@
 
 This is a map: every file in the repository, what it's for, and what it connects to (what it imports, and who imports it). It is deliberately literal and file-by-file — for the *behavioral* deep-dive (execution order, the HITL cross-thread handshake, why two orchestrators run concurrently, known limitations), read **[ARCHITECTURE.md](ARCHITECTURE.md)** instead; the two documents are meant to be read together, and this one cross-references that one rather than repeating it.
 
-**How to read this doc**: each entry is `path — one-line purpose`, then a short paragraph. "Imports" lists the project-internal modules it depends on (not third-party packages — see `requirements.txt` for those). "Used by" lists what depends on it. If an entry has no "Used by", it's an entry point (run directly, or by an external process like the Flask dev server). Every `__init__.py` under `agents/`, `bridge/`, `collectors/`, `web/`, and their subpackages is empty (a package marker only) and isn't given its own entry below — except `core/__init__.py`, which re-exports `ForensicAnomaly`/`AgentAnalysisReport`/`AgentResponse`/`HumanFeedback` (from `models.py`), `locate_staging_directory`/`load_event_context`/`DEFAULT_EVENT_CONTEXT_FILENAME` (from `utils.py`), and `BaseHITLAgent` (from `base_agent.py`) at the package level, though every actual import site in this codebase still spells out the submodule (`from core.models import ...`) rather than relying on this re-export.
+**How to read this doc**: each entry is `path — one-line purpose`, then a short paragraph. "Imports" lists the project-internal modules it depends on (not third-party packages — see `requirements.txt` for those). "Used by" lists what depends on it. If an entry has no "Used by", it's an entry point (run directly, or by an external process like the Flask dev server). Every `__init__.py` under `agents/`, `bridge/`, `collectors/`, `db/`, `web/`, and their subpackages is empty (a package marker only) and isn't given its own entry below — except `core/__init__.py`, which re-exports `ForensicAnomaly`/`AgentAnalysisReport`/`AgentResponse`/`HumanFeedback` (from `models.py`), `locate_staging_directory`/`load_event_context`/`DEFAULT_EVENT_CONTEXT_FILENAME` (from `utils.py`), and `BaseHITLAgent` (from `base_agent.py`) at the package level, though every actual import site in this codebase still spells out the submodule (`from core.models import ...`) rather than relying on this re-export.
 
 ---
 
@@ -53,7 +53,7 @@ Every Pydantic schema in the system — the data contract every agent's LLM outp
 **Imports**: nothing project-internal. **Used by**: every file under `agents/`, `core/base_agent.py`, `core/handoff.py`, `web/routes.py` (indirectly, via `.dict()` output).
 
 ### `core/base_agent.py`
-`BaseHITLAgent` — the class every one of the ~25 agents subclasses. Provides: the Gemini `AsyncOpenAI` client (`GEMINI_API_KEY`/`LLM_MODEL` env vars, with a hardcoded fallback key — see `ARCHITECTURE.md` §10), the forensic safe-file-reading gate (`_inventory_raw_file`, `_looks_like_binary` — executables/known-binary-artifacts are *never* opened as text), `parse_category_artifacts()`/`build_malware_path_payload()`/`build_file_metadata_records()` (the common ways a leaf agent turns a staging category into an LLM payload), `execute_llm_analysis()`, and the two HITL loops every leaf agent ends its `process_task()` with:
+`BaseHITLAgent` — the class every one of the ~25 agents subclasses. Provides: the `AsyncOpenAI` client, built from `core/llm_config.py:get_active_llm_config()` (the admin-editable, DB-backed LLM Provider Configuration — see `core/llm_config.py`'s entry below and `ARCHITECTURE.md` §3.2), the forensic safe-file-reading gate (`_inventory_raw_file`, `_looks_like_binary` — executables/known-binary-artifacts are *never* opened as text), `parse_category_artifacts()`/`build_malware_path_payload()`/`build_file_metadata_records()` (the common ways a leaf agent turns a staging category into an LLM payload), `execute_llm_analysis()`, and the two HITL loops every leaf agent ends its `process_task()` with:
 - `run_with_hitl(parsed_tool_data)` — calls the LLM, then submits for approval; on REVISE, replays the whole conversation with the analyst's correction folded in and re-calls the LLM.
 - `run_automated_with_hitl(parsed_tool_data, deterministic_analysis)` — **never** calls the LLM; submits an already-computed `AgentAnalysisReport`-shaped dict directly for approval. Used by the pure-automation modules in Memory/File Analysis. A REVISE here just logs the analyst's feedback as an annotation (there's no LLM to hand it to) and re-submits the same result.
 **Imports**: `core.models`, `core.utils`, and (lazily, inside try/except, so this file never hard-depends on Flask being up) `bridge.hitl_bridge`. **Used by**: every leaf agent file under `agents/`.
@@ -65,6 +65,38 @@ Every Pydantic schema in the system — the data contract every agent's LLM outp
 ### `core/handoff.py`
 Cross-agent file handoff (`ARCHITECTURE.md` §6.6). `iter_anomalies(node)` recursively walks any nested father-agent report for every `anomalies_found` entry, at any depth. `scan_and_handoff_suspicious_files(report_tree, staging_root)` filters those to real, existing, not-already-staged Windows paths of a type File Analysis can parse, copies them into `ProgramDataList/raw/`, and records a `HandoffRecord` in `<staging_root>/handoffs.json`. Called once per father agent by `agents/orchestrators/master_analyst.py`, not by individual leaf agents.
 **Imports**: nothing project-internal (lazily imports `bridge.hitl_bridge` for logging only). **Used by**: `agents/orchestrators/master_analyst.py`.
+
+### `core/llm_config.py`
+`get_active_llm_config()` — reads the singleton `LlmProviderConfig` DB row (`db/models.py`, id=1) and returns `{provider_label, base_url, api_key, model_name, context_limit}`, the values every agent's `AsyncOpenAI` client is built from. Falls back to a hardcoded Open WebUI-shaped dict only if the DB row is missing entirely (not a live-key fallback for normal operation — see `ARCHITECTURE.md` §3.2). This is what the old hardcoded-Gemini-key setup was replaced with; editable from **System Management → LLM Provider Configuration** (`web/management_routes.py`).
+**Imports**: `db.database`, `db.models`. **Used by**: `core/base_agent.py` (every agent), the Findings-page "Deep Analyze with Agent" enrichment helper.
+
+### `core/help_content.py`
+Renders `docs/help-center/*.md` server-side for the in-app Help Center. `python-markdown` (`attr_list`, `fenced_code`, `tables`, `sane_lists` extensions) plus a post-processing pass for a custom `{#anchor-id}` heading syntax, emoji-callout blockquotes (`> ℹ️`/`> ⚠️`/`> ✅`/`> 🔧`), and figure placeholders. `_load_all()` is `@lru_cache(maxsize=1)` — parses every article once per process; `reload_content()` exposes a manual `cache_clear()` for picking up an edited `.md` file without a restart.
+**Imports**: nothing project-internal. **Used by**: `web/help_routes.py`.
+
+### `core/retention_scheduler.py`
+`start_background_checker(project_root, interval_seconds=600)` — a daemon thread, started once from `app.py`, that every 10 minutes calls `check_policies_once()`: for every `RetentionPolicy` with `auto_archive_enabled=True`, runs `core/retention.py`'s `preview_sweep()` and logs a `WARN` via `bridge.log_event()` the moment a category's violation count changes. **Never deletes anything itself** — deletion stays a manual preview-then-confirm action on the Management page's Retention tab.
+**Imports**: `core.retention`, lazily `bridge.hitl_bridge`. **Used by**: `app.py` only.
+
+### `core/retention.py`
+Storage-usage scanning (per-category size/last-modified across every `investigation_staging_*/`) and the preview/execute sweep logic behind the Management page's Retention tab and `core/retention_scheduler.py`'s background check. Deletion is always an explicit, previewed, admin-confirmed action.
+**Imports**: nothing project-internal. **Used by**: `web/management_routes.py`, `core/retention_scheduler.py`.
+
+### `core/sigma_engine.py`
+A real, partial-spec Sigma rule evaluator (not just storage) — `CompiledSigmaRule` supports named detection blocks (dict = AND, list-of-dicts = OR), field modifiers `|contains`/`|startswith`/`|endswith`/`|re`, value-list OR, and a `condition` string with `and`/`or`/`not`/parens/`1 of x*`/`all of x*`, evaluated via a restricted `ast` walk rather than `eval` on untrusted YAML. Explicitly not supported: aggregation functions (`count()`, `near`, timeframes) or field-to-field comparisons. Rules live in `db.models.SigmaRule`; compiled rules are cached in-memory and invalidated on any CRUD.
+**Imports**: `db.database`, `db.models`. **Used by**: `web/management_routes.py` (CRUD + dry-run test endpoint), `agents/windows_forensics/evtx_sysmon.py` (actual live evaluation against extracted event fields — this is genuinely wired into detection, not just catalogued).
+
+### `core/yara_engine.py`
+Validates YARA rule text (`validate_rule_text()`) before a rule is saved from the Management page's YARA tab, so a syntactically invalid rule never makes it into `db.models.YaraRule`.
+**Imports**: nothing project-internal. **Used by**: `web/management_routes.py`.
+
+### `core/exclusion_engine.py`
+Findings-suppression rule matching behind the Management page's Exclusion Rules tab: file hash/path/IP/domain/port/process name/PID/PPID/finding-category rules, each exact/glob/regex/CIDR, either just hiding a finding behind Findings' "Show excluded" toggle or suppressing it outright. Backs the rule tester and per-rule suppression-count "impact" view too.
+**Imports**: `db.models`. **Used by**: `web/management_routes.py`, `web/routes.py` (applied when building the Findings list).
+
+### `core/finding_utils.py`
+Shared helpers used by the Findings and IOCs pages — e.g. `classify_ioc_type()`, used when a finding is saved as an IOC (`POST /api/findings/save-as-ioc`) to decide whether a derived value is a hash, IP, domain, etc.
+**Imports**: nothing project-internal. **Used by**: `web/routes.py`.
 
 ---
 
@@ -78,10 +110,24 @@ Key methods: `register_hitl_pause()`/`submit_hitl_decision()` (the approve/revis
 
 ---
 
+## `db/` — persistence for everything outside a single investigation run
+
+Deliberately separate from `bridge`/`investigation_staging_*/`: those hold *this run's* live pipeline state; `db/` holds accounts, platform config, detection rules, and every piece of analyst-added state on findings — things that must survive across and independent of any one investigation.
+
+### `db/database.py`
+SQLite engine at `<project_root>/iai.db` (`check_same_thread=False`, so background threads — investigation runs, enrichment jobs — can use it too). `init_db()` (called once from `app.py`) creates every table then calls `_seed_defaults()` — inserts the default `admin`/`changeme` user (`must_change_password=True`) if the `users` table is empty, and a default `LlmProviderConfig` row (id=1) if missing. `get_session()` is a `@contextmanager` — commits on clean exit, rolls back and re-raises on exception, always closes; this is the only way any route touches the database.
+**Imports**: `db.models` (inside `init_db()`, so model classes register on `Base` before `create_all()`). **Used by**: `web/routes.py`, `web/management_routes.py`, `web/auth.py`, `core/llm_config.py`, `core/sigma_engine.py`, `core/exclusion_engine.py`.
+
+### `db/models.py`
+13 SQLAlchemy model classes: `FindingOverlay` (mutable analyst state layered onto agent-derived findings — status/assignment/tags/MITRE techniques/confidence/cluster/dismissal; agent findings themselves are recomputed from `bridge.agent_states` per request and never persisted, so this table is their only durable state), `ManualFinding`, `LocalIOC`, `AuditLogEntry`, `EnrichmentJob`, `SavedView`, `FindingLock` (poll-based presence lock, `is_stale()` after 25s with no heartbeat), `FindingComment`, `ExclusionRule`, `User` (`admin`/`analyst`/`viewer` role as a plain string column), `LlmProviderConfig` (singleton row, id=1), `YaraRule`, `SigmaRule`, `RetentionPolicy`.
+**Imports**: nothing project-internal. **Used by**: `db/database.py`, `web/routes.py`, `web/management_routes.py`, `web/auth.py`, `core/llm_config.py`, `core/sigma_engine.py`, `core/exclusion_engine.py`.
+
+---
+
 ## `collectors/` — Phase 1, evidence acquisition
 
 ### `collectors/collector.py`
-Runs as a **separate subprocess** (`python -m collectors.collector --drive X --staging <dir> --scope <ALL|WINDOWS|FILE|MEMORY>`), never imported in-process by the web app (only ever `Popen`'d) — this isolates a collector crash from Flask and lets its stdout stream live into the dashboard log. Reads `collector_paths.json`, creates `<Category>/{raw,metadata}/` per category, SHA-256-hashes every file before *and* after copy (`hash_manifest.csv`), and runs the Eric Zimmerman/RegRipper/Sysinternals tools in `tools/` against the copied raw files to populate `metadata/`. `run_collection()` is the programmatic entry point both the CLI (`if __name__ == "__main__"`) and `field_kit/run_kit.py` call. Path resolution (`PROJECT_ROOT`/`TOOLS_DIR`) branches on `sys.frozen` so the exact same module works unmodified when PyInstaller-frozen into the field kit — see `ARCHITECTURE.md` §9.
+Runs as a **separate subprocess** (`python -m collectors.collector --drive X --staging <dir> --scope <ALL|WINDOWS|FILE|MEMORY>`, or `--folder <path>` instead of `--drive` — see below), never imported in-process by the web app (only ever `Popen`'d) — this isolates a collector crash from Flask and lets its stdout stream live into the dashboard log. Reads `collector_paths.json`, creates `<Category>/{raw,metadata}/` per category, SHA-256-hashes every file before *and* after copy (`hash_manifest.csv`), and runs the Eric Zimmerman/RegRipper/Sysinternals tools in `tools/` against the copied raw files to populate `metadata/`. `run_collection()` is the programmatic entry point both the CLI (`if __name__ == "__main__"`) and `field_kit/run_kit.py` call for a normal drive sweep. `run_folder_collection(folder_path, staging_root)` is the other entry point — ingests one arbitrary folder (any depth, any drive) instead: no drive-root artifact categories apply, it just recursively hashes/copies everything under that folder into `ProgramDataList/raw/` via the same `copy_matched_path()` helper `collect_standard_artifacts()` uses, for File/Malware analysis. This backs the Launch Hub's in-app folder picker (`GET /api/browse-folder` in `web/routes.py`) for when the analyst wants one specific folder analyzed rather than a whole drive. Path resolution (`PROJECT_ROOT`/`TOOLS_DIR`) branches on `sys.frozen` so the exact same module works unmodified when PyInstaller-frozen into the field kit — see `ARCHITECTURE.md` §9.
 **Imports**: nothing project-internal. **Used by**: `web/routes.py` (via `subprocess.Popen(["python", "-m", "collectors.collector", ...])`), `field_kit/run_kit.py` (direct import, `from collectors.collector import run_collection, select_drive`).
 
 ### `collectors/file_extractor.py`
@@ -210,28 +256,53 @@ The shared MCP (Model Context Protocol) automation layer — the File Analysis e
 
 ## `web/` — the HTTP layer
 
+**97 `@app.route` declarations across these four files** — supersedes any older "25 routes" figure, which predates authentication, Findings triage, IOCs, System Management, and the Help Center. See `ARCHITECTURE.md` §7.1 for the full grouped route table.
+
 ### `web/routes.py`
-`register_routes(app)` registers all 25 Flask routes (pages, `/api/status|logs|topology|agents|findings`, investigation lifecycle, HITL approve/revise, file uploads, drive listing, existing-investigation listing/deletion, per-agent prompt override). The one route worth reading closely is `POST /api/investigation/start`'s `run_wrapper()` — the daemon background thread that runs Phase 1 (`subprocess.Popen` of the collector) then Phase 2 (`asyncio.run(MasterAnalystAgent().execute_full_investigation(...))`), and reports `COMPLETED`/`ERROR` based on `master_analyst.py`'s new `father_agent_errors` field (full success / partial success / total failure — see `ARCHITECTURE.md` §6.6).
-**Imports**: `bridge.hitl_bridge`, `agents.orchestrators.master_analyst` (lazily, inside the route handler, to avoid a slow import at Flask startup), `collectors.collector` (only via subprocess, not import). **Used by**: `app.py`.
+60 routes: pages (`/`, `/topology`, `/agents`, `/findings`, `/iocs`), `/api/status|logs|topology|agents|hitl/pending`, investigation lifecycle (start/pause/resume/stop/context/stop-collecting/continue-collecting/report), HITL approve/revise, file uploads (`/api/upload/file`, `/api/upload/extract` — two different intake paths, see `ARCHITECTURE.md` §7.1), drive listing + the in-app folder browser (`GET /api/browse-folder`), existing-investigation listing/deletion, per-agent prompt override, and the entire Findings-triage + Saved Views + IOCs API (by far the largest single group — dismiss/bulk-dismiss/restore/delete/assign/tag/mitre/confidence/cluster/manual/save-as-ioc/export/enrich/comments/audit-log/lock/pivot/timeline-context). The one route worth reading closely is `POST /api/investigation/start`'s `run_wrapper()` — the daemon background thread that runs Phase 1 (`subprocess.Popen` of the collector, either `--drive` or `--folder`) then Phase 2 (`asyncio.run(MasterAnalystAgent().execute_full_investigation(...))`), and reports `COMPLETED`/`ERROR` based on `master_analyst.py`'s `father_agent_errors` field (full success / partial success / total failure — see `ARCHITECTURE.md` §6.6).
+**Imports**: `bridge.hitl_bridge`, `agents.orchestrators.master_analyst` (lazily, inside the route handler, to avoid a slow import at Flask startup), `collectors.collector` (only via subprocess, not import), `core.exclusion_engine`, `core.finding_utils`, `db.database`, `db.models`. **Used by**: `app.py`.
+
+### `web/auth.py`
+3 routes (`/login`, `/logout`, `/change-password`) plus the actual enforcement mechanism for all of them: `_global_auth_gate()`, a `before_request` hook registered by `register_auth(app)`. Session-based login via Flask's own signed-cookie `session["user_id"]` (no Flask-Login, no server-side session store) — `current_user()` looks that id up against `db.models.User` on every request. The gate: static files and `/login`/`/logout` bypass everything; no session → 401 (`/api/*`) or redirect to `/login`; `must_change_password` force-redirects everywhere except `/change-password`; any `/management*`/`/api/management/*` path requires `role == "admin"`; a `viewer` role gets every non-GET request rejected except sign-out/change-password/the Findings export. `role_required(*roles)` is a decorator available for stricter per-route checks but isn't currently used by any route — the coarser checks above (admin-boundary + viewer-read-only) are done globally instead. See `ARCHITECTURE.md` §7.2.
+**Imports**: `db.database`, `db.models`. **Used by**: `app.py` (`register_auth(app)`), and implicitly gates every other route file since it's a `before_request` hook.
+
+### `web/management_routes.py`
+31 routes, all under `/management` and `/api/management/*`, all admin-only (enforced by `web/auth.py`'s global gate, not per-route). Six tabs: Findings Exclusion Rules, YARA & Sigma Rules, Baseline/Golden-Image Whitelisting, LLM Provider Configuration (+ Test Connection), Data Lifecycle & Retention (storage summary, per-category policy, preview-then-execute sweep), and Auditability & Access Control (user CRUD, global audit log). See `ARCHITECTURE.md` §7.3 for what each tab actually does.
+**Imports**: `db.database`, `db.models`, `core.exclusion_engine`, `core.yara_engine`, `core.sigma_engine`, `core.retention`, `bridge.hitl_bridge` (for the merged audit log). **Used by**: `app.py`.
+
+### `web/help_routes.py`
+3 routes: `/help` (redirects to the first article), `/help/<slug>` (renders one article + its own TOC via `core.help_content`), `GET /api/help/search-index` (every heading across every article, for client-side fuzzy search in `app.js`). See `ARCHITECTURE.md` §7.5.
+**Imports**: `core.help_content`. **Used by**: `app.py`.
 
 ---
 
 ## `static/` and `templates/` — the frontend
 
 ### `static/js/app.js`
-The entire dashboard client (no build step, no framework). `setInterval(..., 2000)` polls five GET endpoints. Key pieces: `fetchStatus()` (toggles Setup Hub vs Active Dashboard, and the "no investigation selected" banner on Topology/Agents/Findings), `loadSetupData()`/`loadExistingInvestigations()` (the Launch Hub's session list — click-to-rescan, and auto-refresh on hub-visible transition), `renderTopologyCanvas()` (the hand-rolled SVG DAG with a hardcoded `{agent_id: {x,y}}` layout table — this is where a new agent node needs a position added), the HITL approve/revise/prompt-override controls, and the toast/confirm-dialog helpers used everywhere instead of native `alert()`/`confirm()`.
+The entire dashboard client (no build step, no framework) — roughly 3,700 lines in one file now. `setInterval(..., 2000)` polls the status/logs/topology/agents/findings/HITL-pending endpoints. Major sections, in file order: global state + trusted inline SVG icon fragments; toast/confirm-dialog helpers (replace native `alert()`/`confirm()`); navbar user-menu + theme (light/dark) toggle; `fetchStatus()` (toggles Setup Hub vs Active Dashboard, the pending-HITL flicker, and the "no investigation selected" banner on Topology/Agents/Findings); `loadSetupData()`/`loadExistingInvestigations()` (the Launch Hub's session list); the folder browser (the in-app "Explorer" backing `GET /api/browse-folder`, for the "investigate a specific folder instead" picker); pipeline steering controls; `renderTopologyCanvas()` (the hand-rolled SVG DAG with a hardcoded `{agent_id: {x,y}}` layout table — this is where a new agent node needs a position added) + pan/zoom/maximize + node modal drawer; Agent Control Center; the Findings triage view (filters, clustering, selection/bulk actions, keyboard triage mode, saved views, manual findings, save-as-IOC, export, the finding detail drawer — its single largest section); the IOC Library page; **System Management** (by far the largest section, ~860 lines — exclusions, YARA rules, Sigma rules, baseline import, LLM config + preset detection, retention, users, global audit log); and the Help Center's client-side fuzzy search/tag-filter/scroll-spy logic, at the end of the file.
+
+Every place that renders agent/LLM-originated text (raw parsed tool data, AI analysis JSON, finding fields) does so via `textContent`, never `innerHTML` — worth preserving when adding new render paths, since that data's origin is untrusted from the browser's perspective.
 
 ### `static/css/style.css`
-All styling; no CSS framework. `.empty-state-page` is the "no investigation selected" placeholder style.
+All styling; no CSS framework. `.empty-state-page` is the "no investigation selected" placeholder style. Theme (light/dark) is `data-theme` on `<html>`, toggled by `app.js`'s `setTheme()` and persisted in `localStorage`; almost every color is a CSS variable redefined under `html[data-theme="light"]`, **except** a deliberate set of fixed `--console-*` variables used only by the terminal-style panels (log stream, code viewers) that intentionally keep a dark background in both themes — those panels' text colors must use `--console-*`, not the theme-following `--text-*`/`--brand`/etc. variables, or they go unreadable in light mode (a real bug that shipped once — see `docs/help-center/07-known-limitations.md`).
 
 ### `templates/base.html`
-The nav shell every page extends: brand, the 4 nav links (Launch & Telemetry / Dynamic Topology / Agent Control Center / Findings), mode toggle, pending-HITL badge, toast/confirm-dialog containers, and the `<script>` tag loading `app.js`.
+The nav shell every page extends (except `login.html`/`change_password.html` — see below): brand, 5 nav links (Launch & Telemetry / Dynamic Topology / Agent Control Center / Findings / IOCs), the mode toggle, the pending-HITL badge, and — only when `current_user` is set — a dropdown with Help, System Management (admin-only), a Theme toggle, and Sign out. Also hosts the toast stack, confirm-dialog overlay, and folder-browser overlay containers, and the `<script>` tag loading `app.js`.
 
 ### `templates/dashboard.html`
-Extends `base.html`. Contains both the Setup Hub (new-investigation form + Existing Staging Sessions list) and the Active Dashboard (KPI tiles, pause/resume/stop controls, log terminal) — `app.js` toggles which is visible based on `pipeline_status`.
+Extends `base.html`. Contains both the Setup Hub (new-investigation form — drive picker, the folder-browser "Browse…" alternative, scope, uploads — + Existing Staging Sessions list) and the Active Dashboard (KPI tiles, pause/resume/stop controls, quick context injection, the **Add File** control, log terminal) — `app.js` toggles which is visible based on `pipeline_status`.
 
-### `templates/topology.html`, `templates/agents.html`, `templates/findings.html`
-Each extends `base.html`, wraps its real content in `<div id="page-body">` next to a `<div id="no-investigation-banner">` (toggled by `fetchStatus()`), and is otherwise page-specific: the SVG canvas + HITL inspection drawer (`topology.html`), the agent sidebar + detail/prompt-override panel (`agents.html`), the severity filter chips + findings list container (`findings.html`).
+### `templates/topology.html`, `templates/agents.html`, `templates/findings.html`, `templates/iocs.html`
+Each extends `base.html`; `topology.html`/`agents.html`/`findings.html` additionally wrap their real content in `<div id="page-body">` next to a `<div id="no-investigation-banner">` (toggled by `fetchStatus()`), since they only make sense once an investigation is selected — `iocs.html` doesn't need that gate, since the IOC library persists across investigations. Otherwise page-specific: the SVG canvas + HITL inspection drawer (`topology.html`), the agent sidebar + detail/prompt-override panel (`agents.html`), the severity filter chips + findings list + detail drawer (`findings.html`), a single IOC table + STIX/MISP/CSV export buttons (`iocs.html`).
+
+### `templates/help.html`, `templates/management.html`
+Extend `base.html`. `help.html` renders one Help Center article (`/help/<slug>`) with its own on-page TOC and a sidebar where only the active article's headings expand. `management.html` renders one System Management tab (`/management/<tab>`) — admin-only, see `ARCHITECTURE.md` §7.3.
+
+### `templates/login.html`, `templates/change_password.html`
+Standalone full HTML documents — **do not** extend `base.html` (there's no logged-in user yet, so no navbar to render).
+
+### `templates/forbidden.html`
+Extends `base.html` (a 403 only ever happens to an already-authenticated user, so the navbar still makes sense). Rendered by `web/auth.py`'s `_forbidden_response()` for the admin-boundary and viewer-read-only checks.
 
 ---
 
@@ -264,5 +335,8 @@ The kit's own end-user instructions (copied verbatim into the built kit) — req
 - **A new Windows Forensics leaf agent**: add to `agents/windows_forensics/` or `agents/malware_paths/`, wire it into the relevant orchestrator's `self.sub_agents`/`self.direct_agents` list, add a topology node in `bridge/hitl_bridge.py:_init_topology_nodes()`, add an `{x,y}` position in `static/js/app.js`'s `renderTopologyCanvas()`.
 - **A new deterministic (non-LLM) agent**: subclass `BaseHITLAgent`, end `process_task()` with `run_automated_with_hitl(parsed_tool_data, deterministic_analysis)` instead of `run_with_hitl()` — see `malfind_correlator.py` or `pestudio_analysis.py` for the pattern.
 - **A new cross-agent handoff trigger**: don't touch individual leaf agents — extend `core/handoff.py`'s eligibility rules (`_HANDOFF_ELIGIBLE_EXTENSIONS`, `_WINDOWS_PATH_RE`) instead; it's already called generically after every father agent.
-- **A new dashboard page**: add a template extending `base.html`, a route in `web/routes.py`, a nav link in `base.html`, and (if it should be gated on "no investigation selected") the `#no-investigation-banner`/`#page-body` pair `fetchStatus()` already knows how to toggle.
+- **A new dashboard page**: add a template extending `base.html`, a route in `web/routes.py`, a nav link in `base.html`, and (if it should be gated on "no investigation selected" — most pages should, `iocs.html` is the one exception) the `#no-investigation-banner`/`#page-body` pair `fetchStatus()` already knows how to toggle.
 - **A new Pydantic schema**: `core/models.py`, grouped near its subsystem's other schemas.
+- **A new persistent DB-backed feature** (not tied to a single investigation): a model class in `db/models.py`, a `core/` module for its logic if it needs any beyond CRUD, and routes in `web/management_routes.py` if it belongs on the admin-only Management page — see `ExclusionRule`/`core/exclusion_engine.py` or `SigmaRule`/`core/sigma_engine.py` for the pattern.
+- **A new Management tab**: add its slug to `web/management_routes.py`'s `MANAGEMENT_TABS`, a sidebar entry + panel in `templates/management.html`, and the corresponding `/api/management/*` routes — the whole page and API are admin-only via `web/auth.py`'s global gate, so no per-route auth decorator is needed.
+- **A new Help Center article**: add a numbered `.md` file under `docs/help-center/`, then add it to `core/help_content.py`'s `ARTICLE_FILES` list in the same reading-order position (that list drives the live page — `docs/help-center/README.md`'s own numbered list is just the human-readable mirror of it).

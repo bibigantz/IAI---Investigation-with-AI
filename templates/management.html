@@ -62,7 +62,7 @@
                 <div class="panel-title">Sigma Rules</div>
                 <button class="btn btn-primary" onclick="openSigmaDrawer()">+ Add Sigma Rule</button>
             </div>
-            <p class="panel-meta form-hint warn">Catalogued and toggleable, but not yet wired into live detection -- there is no Sigma execution backend against the EVTX/Sysmon pipeline in this build. Stored here so rules are ready once that engine exists.</p>
+            <p class="panel-meta form-hint">Active rules execute for real against every event the EVTX/Sysmon Correlator extracts (<code>core/sigma_engine.py</code>). Supports named detection blocks, <code>|contains</code>/<code>|startswith</code>/<code>|endswith</code>/<code>|re</code> modifiers, value-list OR, and <code>and</code>/<code>or</code>/<code>not</code>/<code>1 of x*</code>/<code>all of x*</code> conditions -- not aggregation functions (<code>count()</code>, <code>near</code>, timeframes) or field-to-field comparisons.</p>
             <table class="mgmt-table" id="sigma-table">
                 <thead><tr><th>Name</th><th>Created by</th><th>Active</th><th></th></tr></thead>
                 <tbody id="sigma-table-body"></tbody>

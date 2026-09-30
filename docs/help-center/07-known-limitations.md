@@ -60,6 +60,25 @@ infrastructure this codebase can't manufacture on its own.
 - **`README.md`/`ARCHITECTURE.md` stale claims** ("no authentication on any
   route," a hardcoded API key) — both were already fixed by earlier work
   this session; the docs are now updated to match.
+- **Agent Control Center / Topology / Findings silently stopped
+  auto-refreshing.** `onScopeChange()` in `static/js/app.js` read
+  `#scope-selector`'s value with no null check; that element only exists on
+  the Launch Hub. On every other page it threw, which aborted the shared
+  `DOMContentLoaded` handler *before* it reached the `setInterval(...)`
+  call that starts all 2-second polling — so those pages fetched their data
+  once on load and then never again, and the only way to see an update was
+  to reload the page. Fixed with a null guard; polling now runs on every
+  page as intended.
+- **Light mode made the live log stream and other console-style panels
+  unreadable.** The terminal-style panels (log stream, code viewers)
+  deliberately keep a hardcoded dark background in both themes (see
+  [Light mode / dark mode](01-getting-started.md#light-dark-mode)) — but
+  their *text* colors were still theme variables that flip to near-black
+  in light mode, so text rendered near-invisible against that dark
+  background (worst case: `.log-line.HITL .log-msg`, using
+  `--text-primary`, which is near-black in light mode). Fixed by giving
+  those consoles their own fixed `--console-*` color variables in
+  `static/css/style.css` that don't change with the theme.
 
 ## Things that depend on infrastructure this platform doesn't bundle {#things-that-need-external-infra}
 

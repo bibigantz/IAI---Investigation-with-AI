@@ -64,7 +64,7 @@ Open **http://127.0.0.1:5000/** and sign in with the first-run account — usern
 
 This is what you see when nothing is running (`pipeline_status == IDLE`).
 
-- **New Investigation** (left panel): pick a target drive (or "Skip drive collection" if you're only uploading files / a memory dump), a **scope** —
+- **New Investigation** (left panel): pick a target drive, "Skip drive collection" if you're only uploading files / a memory dump, or **Browse…** to pick a specific folder anywhere on the machine (an in-app folder picker — click through drives and subfolders, no matter how deeply nested, and it ingests just that folder for File/Malware analysis instead of the whole drive), plus a **scope** —
   - `ALL` — collect + run every analysis domain
   - `WINDOWS` — Windows Forensics only
   - `FILE` — File/Malware Analysis only (you'll usually want to also attach files via the uploader)
@@ -74,7 +74,7 @@ This is what you see when nothing is running (`pipeline_status == IDLE`).
 
 ### 2. Active Dashboard (while `RUNNING`/`PAUSED`/`COMPLETED`)
 
-KPI tiles (pipeline status, mode, pending HITL count, node count), Pause/Resume/Stop/Return-to-Hub, a live log terminal, and quick context injection (adds to the case brief mid-run without restarting). **Download Report** appears once `Master_Executive_Intelligence_Report.json` exists for the active investigation.
+KPI tiles (pipeline status, mode, pending HITL count, node count), Pause/Resume/Stop/Return-to-Hub, a live log terminal, quick context injection (adds to the case brief mid-run without restarting), and an **Add File** button to feed a new suspect file into the running investigation without stopping it. **Download Report** appears once `Master_Executive_Intelligence_Report.json` exists for the active investigation. The navbar's **Pending HITL** badge flickers red whenever something needs your approval, and every page (this one, Topology, Agent Control Center, Findings) live-updates on a 2-second poll — no reload needed.
 
 ### 3. Dynamic Topology (`/topology`)
 
@@ -91,6 +91,10 @@ Every anomaly from every agent, aggregated and sorted most-severe-first, with se
 ### Execution mode: SUPERVISED vs AUTOMATIC
 
 Toggle in the top-right nav badge. **SUPERVISED** (default) pauses every agent at its finding for your decision. **AUTOMATIC** auto-approves everything the instant it's produced — useful for a fast unattended first pass; switch back to SUPERVISED to review anything specific afterward.
+
+### Light mode / dark mode
+
+Your username menu (top-right) has a Theme switch — click either icon to change the current theme immediately, on every page, no reload. It's saved per-browser (not per-account). The live log stream and other console-style panels intentionally stay dark in both themes, matching a console aesthetic rather than page chrome.
 
 ---
 

@@ -10,8 +10,17 @@ automatically based on pipeline status.
 
 1. Pick a **scope**: Full System Analysis (all agents), Windows Forensics
    only, File/Malware Analysis only, or Volatility Memory Analysis only.
-2. Pick a **target drive** to collect from, or "Skip drive collection" if
-   you're supplying files directly instead.
+2. Pick a **target drive** to collect from, "Skip drive collection" if
+   you're supplying files directly instead, or — if what you actually want
+   analyzed is one specific folder rather than a whole drive — click
+   **Browse…** next to "...or investigate a specific folder instead" to
+   open an in-app folder picker. It starts at your drives and lets you
+   click down into subfolders (however deeply nested — a folder named
+   `test` three levels into a drive works fine); **Use This Folder** fills
+   in the path for you, so you never have to type an absolute path by hand.
+   This only ingests that one folder's contents for File/Malware analysis —
+   it doesn't sweep the rest of the drive the way a full drive collection
+   does.
 3. Depending on scope, one or more upload areas appear:
    - **File upload** (Full/File scope): `.exe`, `.dll`, `.sys`, `.zip`,
      `.rar`, `.7z`. Password-protected ZIPs are auto-extracted using the
@@ -89,9 +98,29 @@ aborted.
 Once running: four KPI tiles (pipeline status, execution mode, pending
 HITL approvals, total swarm nodes), Pause/Resume, Stop Swarm (confirms
 before terminating), Download Report (appears once the master report
-exists), a live log terminal (polls every 2 seconds), and a quick
+exists), a live log terminal (polls every 2 seconds), a quick
 case-context injection box that updates the *currently active*
-investigation's context on the fly.
+investigation's context on the fly, and an **Add File** button right next
+to it.
+
+> ℹ️ **Info:** Add File lets you feed a new suspect file into a *running*
+> investigation without stopping it — click it, pick a file, and it's
+> immediately staged into `ProgramDataList/raw/` for the File Analysis
+> pipeline (the same intake path the Setup Hub's Deep File Extraction
+> uploader uses, including automatic ZIP extraction). It joins the pool for
+> whatever analysis pass comes next; it won't retroactively get swept into
+> a File Analysis stage that already finished scanning that category for
+> this run.
+
+When something needs your decision, the **Pending HITL** badge in the
+navbar turns into a flickering red pill so it's hard to miss even if
+you're on a different page — it stops flickering the instant the last
+pending approval is resolved.
+
+> ℹ️ **Info:** The Agent Control Center, Topology, and Findings pages all
+> live-update on the same 2-second poll as the Launch Hub — you don't need
+> to reload the page to see a new pending approval or a state change while
+> you're sitting on one of those pages.
 
 ### Execution mode: SUPERVISED vs. AUTOMATIC {#execution-mode}
 
