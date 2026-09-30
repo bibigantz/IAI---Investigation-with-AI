@@ -76,10 +76,23 @@ def register_routes(app):
     @app.route("/api/status", methods=["GET"])
     def get_status():
         has_master_report = False
+        collection_progress = None
         if bridge.active_investigation_id:
             staging_path = resolve_staging_dir(bridge.active_investigation_id)
             if staging_path:
                 has_master_report = os.path.isfile(os.path.join(staging_path, MASTER_REPORT_FILENAME))
+                progress_path = os.path.join(staging_path, "collection_progress.json")
+                if os.path.isfile(progress_path):
+                    try:
+                        with open(progress_path, "r", encoding="utf-8") as f:
+                            p = json.load(f)
+                        collection_progress = {
+                            "completed_categories": len(p.get("completed_categories", [])),
+                            "completed_steps": len(p.get("completed_steps", [])),
+                            "stopped": bool(p.get("stopped")),
+                        }
+                    except Exception:
+                        pass
 
         return jsonify({
             "execution_mode": bridge.execution_mode,
@@ -90,7 +103,8 @@ def register_routes(app):
             "approved_count": sum(1 for n in bridge.nodes.values() if n["state"] == "BLUE"),
             "active_count": sum(1 for n in bridge.nodes.values() if n["state"] in ["GREEN", "YELLOW"]),
             "is_paused": bridge.is_paused,
-            "has_master_report": has_master_report
+            "has_master_report": has_master_report,
+            "collection_progress": collection_progress,
         })
 
     @app.route("/api/mode", methods=["POST"])
@@ -834,6 +848,18 @@ def register_routes(app):
 
     @app.route("/api/investigation/stop", methods=["POST"])
     def stop_investigation_endpoint():
+        # If a collector subprocess is still running (this was hit during
+        # COLLECTING, e.g. via the old Stop Swarm control rather than Stop
+        # Collecting), drop the same stop flag so it halts and saves
+        # progress instead of running on as an orphaned background process
+        # with the UI now showing IDLE and no way to see or stop it.
+        if bridge.pipeline_status == "COLLECTING" and bridge.active_investigation_id:
+            try:
+                with open(os.path.join(bridge.active_investigation_id, "STOP_REQUESTED.flag"), "w", encoding="utf-8") as f:
+                    f.write(datetime.now(timezone.utc).isoformat())
+            except Exception:
+                pass
+
         # Persist this investigation's topology/findings/log state to its own
         # staging folder before clearing in-memory state, so choosing it again
         # later restores exactly where it was left off.
@@ -997,6 +1023,77 @@ def register_routes(app):
         bridge.log_event(agent_name, "System prompt overridden by analyst.", level="INFO")
         return jsonify({"success": True, "agent_name": agent_name, "system_prompt": new_prompt})
 
+    def _run_collector_subprocess(staging_dir, drive_letter, scope):
+        """Spawns the collector subprocess, streams its stdout into the live
+        log, and returns 'completed' / 'stopped' / 'failed'. 'stopped'
+        specifically means the analyst clicked Stop Collecting: the flag
+        file it left behind made the collector save collection_progress.json
+        and exit cleanly (code 0), rather than being killed -- that's what
+        lets Continue Collecting resume from exactly where it left off
+        instead of redoing everything."""
+        collector_cmd = [
+            sys.executable, "-m", "collectors.collector",
+            "--drive", drive_letter,
+            "--staging", os.path.abspath(staging_dir),
+            "--scope", scope,
+        ]
+        proc = subprocess.Popen(
+            collector_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            errors='replace',
+            cwd=PROJECT_ROOT,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        )
+        for line in iter(proc.stdout.readline, ''):
+            bridge.log_event("COLLECTOR", line.strip(), level="INFO")
+        proc.stdout.close()
+        remaining_err = proc.stderr.read()
+        proc.stderr.close()
+        proc.wait(timeout=1800)
+        if proc.returncode != 0:
+            err_msg = remaining_err[-500:] if remaining_err else "Unknown error"
+            bridge.log_event("COLLECTOR", f"Collection failed: {err_msg}", level="ERROR")
+            return "failed"
+
+        progress_path = os.path.join(staging_dir, "collection_progress.json")
+        if os.path.isfile(progress_path):
+            try:
+                with open(progress_path, "r", encoding="utf-8") as f:
+                    progress = json.load(f)
+                if progress.get("stopped"):
+                    return "stopped"
+            except Exception:
+                pass
+        return "completed"
+
+    def _run_agent_swarm(staging_dir, scope):
+        from agents.orchestrators.master_analyst import MasterAnalystAgent
+        master = MasterAnalystAgent()
+        final_report = asyncio.run(master.execute_full_investigation(staging_dir=staging_dir, scope=scope))
+
+        father_errors = final_report.get("father_agent_errors", {})
+        father_reports = final_report.get("father_agent_reports", {})
+        if father_errors and not father_reports:
+            # Every father agent that was supposed to run failed -- there's
+            # a written report, but it holds nothing but errors, so this
+            # was not a completed investigation.
+            bridge.pipeline_status = "ERROR"
+            bridge.log_event("MASTER", f"Investigation failed: {father_errors}", level="ERROR")
+        elif father_errors:
+            bridge.pipeline_status = "COMPLETED"
+            bridge.log_event(
+                "MASTER",
+                f"Investigation completed with partial results -- {list(father_errors.keys())} failed "
+                f"and were skipped; see Master_Executive_Intelligence_Report.json for what did complete.",
+                level="WARN",
+            )
+        else:
+            bridge.pipeline_status = "COMPLETED"
+            bridge.log_event("MASTER", "Investigation completed successfully!", level="INFO")
+
     @app.route("/api/investigation/start", methods=["POST"])
     def start_investigation():
         data = request.json or {}
@@ -1005,7 +1102,7 @@ def register_routes(app):
         drive_letter = data.get("drive_letter", "SKIP").strip()
         context_text = data.get("context_text", "").strip()
 
-        if bridge.pipeline_status == "RUNNING":
+        if bridge.pipeline_status in ("RUNNING", "COLLECTING"):
             return jsonify({"success": False, "error": "Investigation is already running"}), 400
 
         from datetime import datetime
@@ -1030,7 +1127,6 @@ def register_routes(app):
             bridge.load_snapshot(staging_dir)
         bridge.is_paused = False
         bridge.pause_event.set()
-        bridge.pipeline_status = "RUNNING"
         bridge.active_investigation_id = staging_dir
         bridge.log_event("MASTER", f"Starting investigation scope {scope} on staging: {staging_dir}", level="INFO")
 
@@ -1040,59 +1136,24 @@ def register_routes(app):
                 if drive_letter != "SKIP":
                     bridge.log_event("COLLECTOR", f"Starting evidence collection on {drive_letter} into {staging_dir}", level="INFO")
                     bridge.update_node_state("Master_Analyst_Agent", "GREEN")
-                    collector_cmd = [
-                        sys.executable, "-m", "collectors.collector",
-                        "--drive", drive_letter,
-                        "--staging", os.path.abspath(staging_dir),
-                        "--scope", scope,
-                    ]
-                    proc = subprocess.Popen(
-                        collector_cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        bufsize=1,
-                        errors='replace',
-                        cwd=PROJECT_ROOT,
-                        env={**os.environ, "PYTHONUNBUFFERED": "1"},
-                    )
-                    for line in iter(proc.stdout.readline, ''):
-                        bridge.log_event("COLLECTOR", line.strip(), level="INFO")
-                    proc.stdout.close()
-                    remaining_err = proc.stderr.read()
-                    proc.stderr.close()
-                    proc.wait(timeout=1800)
-                    if proc.returncode != 0:
-                        err_msg = remaining_err[-500:] if remaining_err else "Unknown error"
-                        bridge.log_event("COLLECTOR", f"Collection failed: {err_msg}", level="ERROR")
+                    bridge.pipeline_status = "COLLECTING"
+                    outcome = _run_collector_subprocess(staging_dir, drive_letter, scope)
+                    if outcome == "failed":
                         bridge.pipeline_status = "ERROR"
+                        return
+                    if outcome == "stopped":
+                        bridge.pipeline_status = "COLLECTION_STOPPED"
+                        bridge.log_event(
+                            "COLLECTOR",
+                            "Evidence collection stopped -- click Continue Collecting to resume from where it left off.",
+                            level="WARN",
+                        )
                         return
                     bridge.log_event("COLLECTOR", "Evidence collection completed successfully", level="INFO")
 
                 # Phase 2: AI Agent Swarm Analysis
-                from agents.orchestrators.master_analyst import MasterAnalystAgent
-                master = MasterAnalystAgent()
-                final_report = asyncio.run(master.execute_full_investigation(staging_dir=staging_dir, scope=scope))
-
-                father_errors = final_report.get("father_agent_errors", {})
-                father_reports = final_report.get("father_agent_reports", {})
-                if father_errors and not father_reports:
-                    # Every father agent that was supposed to run failed --
-                    # there's a written report, but it holds nothing but
-                    # errors, so this was not a completed investigation.
-                    bridge.pipeline_status = "ERROR"
-                    bridge.log_event("MASTER", f"Investigation failed: {father_errors}", level="ERROR")
-                elif father_errors:
-                    bridge.pipeline_status = "COMPLETED"
-                    bridge.log_event(
-                        "MASTER",
-                        f"Investigation completed with partial results -- {list(father_errors.keys())} failed "
-                        f"and were skipped; see Master_Executive_Intelligence_Report.json for what did complete.",
-                        level="WARN",
-                    )
-                else:
-                    bridge.pipeline_status = "COMPLETED"
-                    bridge.log_event("MASTER", "Investigation completed successfully!", level="INFO")
+                bridge.pipeline_status = "RUNNING"
+                _run_agent_swarm(staging_dir, scope)
             except subprocess.TimeoutExpired:
                 bridge.pipeline_status = "ERROR"
                 bridge.log_event("COLLECTOR", "Collection timed out after 30 minutes", level="ERROR")
@@ -1105,7 +1166,101 @@ def register_routes(app):
 
         return jsonify({
             "success": True,
-            "status": "RUNNING",
+            "status": "COLLECTING" if drive_letter != "SKIP" else "RUNNING",
             "staging_dir": staging_dir,
             "scope": scope
         })
+
+    @app.route("/api/investigation/stop-collecting", methods=["POST"])
+    def stop_collecting():
+        """Graceful stop: drops a flag file the collector subprocess checks
+        between categories/steps, so it finishes whatever single step it's
+        mid-way through, saves collection_progress.json, and exits cleanly
+        -- as opposed to killing the subprocess outright, which would risk
+        a half-written file and would lose the "how far did we get" record
+        Continue Collecting depends on."""
+        if bridge.pipeline_status != "COLLECTING":
+            return jsonify({"success": False, "error": "Not currently collecting evidence."}), 400
+        staging_dir = bridge.active_investigation_id
+        if not staging_dir:
+            return jsonify({"success": False, "error": "No active investigation."}), 400
+        try:
+            os.makedirs(staging_dir, exist_ok=True)
+            with open(os.path.join(staging_dir, "STOP_REQUESTED.flag"), "w", encoding="utf-8") as f:
+                f.write(datetime.now(timezone.utc).isoformat())
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+        bridge.log_event(
+            "COLLECTOR",
+            "Stop requested by analyst -- will halt after the current collection step finishes and save progress.",
+            level="WARN",
+        )
+        return jsonify({"success": True})
+
+    @app.route("/api/investigation/continue-collecting", methods=["POST"])
+    def continue_collecting():
+        data = request.json or {}
+        staging_dir = data.get("staging_dir") or bridge.active_investigation_id
+        if not staging_dir or not resolve_staging_dir(staging_dir):
+            return jsonify({"success": False, "error": "Invalid or unknown staging directory."}), 404
+        if bridge.pipeline_status in ("RUNNING", "COLLECTING"):
+            return jsonify({"success": False, "error": "An investigation is already active."}), 400
+
+        progress_path = os.path.join(staging_dir, "collection_progress.json")
+        if not os.path.isfile(progress_path):
+            return jsonify({"success": False, "error": "No saved collection progress found for this investigation."}), 404
+        try:
+            with open(progress_path, "r", encoding="utf-8") as f:
+                progress = json.load(f)
+        except Exception as e:
+            return jsonify({"success": False, "error": f"Could not read collection progress: {e}"}), 500
+
+        drive_letter = progress.get("drive_letter")
+        scope = progress.get("scope", "ALL")
+        if not drive_letter:
+            return jsonify({"success": False, "error": "No drive letter recorded for this collection -- cannot resume automatically."}), 400
+
+        stop_flag = os.path.join(staging_dir, "STOP_REQUESTED.flag")
+        if os.path.isfile(stop_flag):
+            try:
+                os.remove(stop_flag)
+            except Exception:
+                pass
+
+        bridge.load_snapshot(staging_dir)
+        bridge.is_paused = False
+        bridge.pause_event.set()
+        bridge.active_investigation_id = staging_dir
+        bridge.update_node_state("Master_Analyst_Agent", "GREEN")
+        bridge.pipeline_status = "COLLECTING"
+        done = len(progress.get("completed_categories", []))
+        bridge.log_event(
+            "COLLECTOR",
+            f"Resuming evidence collection into {staging_dir} ({done} categor{'y' if done == 1 else 'ies'} "
+            f"already collected -- continuing from where it left off).",
+            level="INFO",
+        )
+
+        def continue_wrapper():
+            try:
+                outcome = _run_collector_subprocess(staging_dir, drive_letter, scope)
+                if outcome == "failed":
+                    bridge.pipeline_status = "ERROR"
+                    return
+                if outcome == "stopped":
+                    bridge.pipeline_status = "COLLECTION_STOPPED"
+                    bridge.log_event("COLLECTOR", "Evidence collection stopped again -- click Continue Collecting to resume.", level="WARN")
+                    return
+                bridge.log_event("COLLECTOR", "Evidence collection completed successfully", level="INFO")
+                bridge.pipeline_status = "RUNNING"
+                _run_agent_swarm(staging_dir, scope)
+            except subprocess.TimeoutExpired:
+                bridge.pipeline_status = "ERROR"
+                bridge.log_event("COLLECTOR", "Collection timed out after 30 minutes", level="ERROR")
+            except Exception as e:
+                bridge.pipeline_status = "ERROR"
+                bridge.log_event("MASTER", f"Investigation encountered error: {e}", level="ERROR")
+
+        thread = threading.Thread(target=continue_wrapper, daemon=True)
+        thread.start()
+        return jsonify({"success": True, "status": "COLLECTING", "staging_dir": staging_dir})

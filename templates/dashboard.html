@@ -132,9 +132,40 @@
         </div>
     </div>
 
+    <!-- COLLECTION-PHASE BANNER (shown while COLLECTING or COLLECTION_STOPPED) -->
+    <div class="panel callout callout-yellow" id="collection-status-banner" style="display:none;">
+        <strong id="collection-status-title">Collecting evidence...</strong>
+        <div id="collection-status-detail" class="form-hint" style="margin-top:0.3rem;"></div>
+    </div>
+
     <!-- PIPELINE STEERING CONTROLS -->
     <div class="panel flex-between" style="flex-wrap: wrap; gap: var(--sp-4);">
-        <div class="btn-row">
+        <!-- Shown only while pipeline_status === COLLECTING -->
+        <div class="btn-row" id="collecting-controls" style="display:none;">
+            <button class="btn btn-danger" onclick="stopCollecting()">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+                Stop Collecting
+            </button>
+            <button class="btn btn-outline accent-indigo" style="border-color: rgba(143,151,245,0.4); color: var(--indigo);" onclick="returnToHub()">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9"/></svg>
+                Return to Hub
+            </button>
+        </div>
+
+        <!-- Shown only while pipeline_status === COLLECTION_STOPPED -->
+        <div class="btn-row" id="collection-stopped-controls" style="display:none;">
+            <button class="btn btn-success" onclick="continueCollecting()">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                Continue Collecting
+            </button>
+            <button class="btn btn-outline accent-indigo" style="border-color: rgba(143,151,245,0.4); color: var(--indigo);" onclick="returnToHub()">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9"/></svg>
+                Return to Hub
+            </button>
+        </div>
+
+        <!-- Agent-phase controls -- shown for RUNNING/PAUSED/COMPLETED/ERROR, hidden during COLLECTING/COLLECTION_STOPPED -->
+        <div class="btn-row" id="agent-phase-controls">
             <button class="btn btn-warning" id="btn-pause-pipeline" onclick="pausePipeline()">
                 <svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                 Pause

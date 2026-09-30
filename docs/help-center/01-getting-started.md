@@ -34,6 +34,38 @@ automatically based on pipeline status.
 > launch — you'll get a clear warning ("Memory Analysis scope requires a
 > memory dump file...") if you try to launch without one.
 
+### Stopping and resuming evidence collection {#stop-continue-collecting}
+
+Collection (Phase 1 — copying artifacts off the target drive, before any AI
+agent runs) can be genuinely interrupted and picked back up later, not just
+aborted.
+
+1. While the dashboard shows **"Collecting evidence..."**, click
+   **Stop Collecting**. This isn't an instant kill — it finishes whatever
+   single category or step it's mid-way through, saves exactly how far it
+   got to `collection_progress.json` in the staging folder, and then exits.
+2. The dashboard switches to **"Evidence collection stopped"**, showing how
+   many categories and steps were already completed.
+3. Click **Continue Collecting** whenever you're ready — same drive, same
+   scope, same staging folder, automatically, because the collector
+   remembered them. It skips every category and step already finished
+   (nothing gets re-copied) and continues with whatever's left.
+4. Once collection actually finishes (whether in one pass or several
+   stop/continue cycles), it moves on to the AI agent swarm exactly as if it
+   had never been interrupted.
+
+> ℹ️ **Info:** This is specific to the *collection* phase. Once agents start
+> analyzing (dashboard shows a normal pipeline status instead of a
+> collection banner), the controls go back to the usual Pause/Resume/Stop
+> Swarm — those are a separate mechanism (they gate the human-in-the-loop
+> approval wait, not a running subprocess) and don't save/resume progress
+> the way collection does.
+
+> ✅ **Best Practice:** Stop Collecting is safe to use even on a whim —
+> nothing already copied and hash-verified is ever redone or re-verified
+> unnecessarily, and the hash-verification record for everything collected
+> before the stop is preserved across the interruption, not overwritten.
+
 ### Step-by-step: resuming an existing investigation {#resuming-investigation-steps}
 
 1. The Setup Hub's right panel lists every `investigation_staging_*` folder

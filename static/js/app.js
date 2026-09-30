@@ -302,8 +302,86 @@ async function fetchStatus() {
         const btnDownload = document.getElementById("btn-download-report");
         if (btnDownload) btnDownload.style.display = data.has_master_report ? "inline-flex" : "none";
 
+        updateCollectionPhaseUI(data);
+
     } catch (e) {
         console.error("Status fetch error:", e);
+    }
+}
+
+// Switches which control group shows in the Active Dashboard's steering
+// panel based on pipeline_status: collecting evidence, stopped mid-
+// collection, or the normal agent-phase controls (Pause/Resume/Stop Swarm) --
+// these are mutually exclusive views of the same panel, not stacked.
+function updateCollectionPhaseUI(data) {
+    const collectingControls = document.getElementById("collecting-controls");
+    const stoppedControls = document.getElementById("collection-stopped-controls");
+    const agentControls = document.getElementById("agent-phase-controls");
+    const banner = document.getElementById("collection-status-banner");
+    if (!collectingControls || !stoppedControls || !agentControls || !banner) return; // not on the dashboard
+
+    const status = data.pipeline_status;
+    collectingControls.style.display = status === "COLLECTING" ? "flex" : "none";
+    stoppedControls.style.display = status === "COLLECTION_STOPPED" ? "flex" : "none";
+    agentControls.style.display = (status === "COLLECTING" || status === "COLLECTION_STOPPED") ? "none" : "flex";
+
+    if (status === "COLLECTING" || status === "COLLECTION_STOPPED") {
+        banner.style.display = "block";
+        const title = document.getElementById("collection-status-title");
+        const detail = document.getElementById("collection-status-detail");
+        const cp = data.collection_progress;
+        if (status === "COLLECTING") {
+            title.textContent = "Collecting evidence...";
+            detail.textContent = cp
+                ? `${cp.completed_categories} categor${cp.completed_categories === 1 ? "y" : "ies"} and ${cp.completed_steps} collection step(s) completed so far.`
+                : "Starting up...";
+        } else {
+            title.textContent = "Evidence collection stopped";
+            detail.textContent = cp
+                ? `${cp.completed_categories} categor${cp.completed_categories === 1 ? "y" : "ies"} already collected and saved. Click Continue Collecting to pick up where it left off -- nothing will be re-collected.`
+                : "Click Continue Collecting to resume.";
+        }
+    } else {
+        banner.style.display = "none";
+    }
+}
+
+async function stopCollecting() {
+    const ok = await showConfirm(
+        "Stops evidence collection after the current step finishes. Everything collected so far is saved -- " +
+        "you can pick up exactly where this left off with Continue Collecting.",
+        { title: "Stop collecting evidence?", confirmLabel: "Stop Collecting", tone: "warning" }
+    );
+    if (!ok) return;
+    try {
+        const res = await fetch("/api/investigation/stop-collecting", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+            showToast("Stop requested -- will halt after the current step finishes.", "warning");
+            fetchStatus();
+        } else {
+            showToast("Could not stop collecting: " + (data.error || "unknown error"), "error");
+        }
+    } catch (e) {
+        showToast("Stop request failed.", "error");
+    }
+}
+
+async function continueCollecting() {
+    try {
+        const res = await fetch("/api/investigation/continue-collecting", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ staging_dir: currentState.active_investigation_id }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast("Resuming evidence collection.", "success");
+            fetchStatus();
+        } else {
+            showToast("Could not resume collecting: " + (data.error || "unknown error"), "error");
+        }
+    } catch (e) {
+        showToast("Resume request failed.", "error");
     }
 }
 

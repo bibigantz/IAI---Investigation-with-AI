@@ -39,6 +39,8 @@ FILE_CATEGORIES = ["Downloads", "TempFolder", "Shortcuts", "ProgramDataList",
     "JumpLists", "Thumbcache", "RecycleBin", "WindowsErrorReporting",
     "HostsFile", "SetupAPILogs", "RDPCache", "PowerShellHistory"]
 HASH_ALGORITHM = "sha256"
+PROGRESS_FILENAME = "collection_progress.json"
+STOP_FLAG_FILENAME = "STOP_REQUESTED.flag"
 execution_report = {
     "Collection": {},
     "Parsing": {},
@@ -71,6 +73,84 @@ def log_error(msg, e=None):
     error_text = f"{msg} | Exception: {str(e)}" if e else msg
     print(f"  [-] [ERROR] {error_text}")
     execution_report["General"]["Errors"].append(error_text)
+
+def _progress_path(staging_root):
+    return os.path.join(staging_root, PROGRESS_FILENAME)
+
+def _stop_flag_path(staging_root):
+    return os.path.join(staging_root, STOP_FLAG_FILENAME)
+
+def load_progress(staging_root, drive_letter, scope):
+    """Loads collection_progress.json if this staging dir already has one
+    (a resume), otherwise returns a fresh progress dict. Recording
+    drive_letter/scope here -- not just which categories are done -- is
+    what lets Continue Collecting re-invoke this exact same collection run
+    without the analyst having to re-enter anything."""
+    path = _progress_path(staging_root)
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                progress = json.load(f)
+            progress.setdefault("completed_categories", [])
+            progress.setdefault("completed_steps", [])
+            log_success(
+                f"Resuming previous collection -- {len(progress['completed_categories'])} categor"
+                f"{'y' if len(progress['completed_categories']) == 1 else 'ies'} already collected."
+            )
+            return progress
+        except Exception as e:
+            log_warning(f"Could not read existing {PROGRESS_FILENAME} ({e}) -- starting collection progress fresh.")
+    return {
+        "drive_letter": drive_letter,
+        "scope": scope,
+        "completed_categories": [],
+        "completed_steps": [],
+        "stopped": False,
+        "started_at": datetime.now().isoformat(),
+    }
+
+def save_progress(staging_root, progress):
+    progress["last_updated"] = datetime.now().isoformat()
+    try:
+        os.makedirs(staging_root, exist_ok=True)
+        with open(_progress_path(staging_root), "w", encoding="utf-8") as f:
+            json.dump(progress, f, indent=2)
+    except Exception as e:
+        log_error("Failed to save collection_progress.json", e)
+
+def is_stop_requested(staging_root):
+    return os.path.isfile(_stop_flag_path(staging_root))
+
+def clear_stop_flag(staging_root):
+    """Called at the start of every run (fresh or resumed) so a stop flag
+    left over from a *previous* stop request doesn't immediately re-trigger
+    -- the web app clears it too before resuming, this is just a safety net
+    for direct CLI use."""
+    try:
+        os.remove(_stop_flag_path(staging_root))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        log_warning(f"Could not clear stale stop flag: {e}")
+
+def _run_step_once(progress, step_name, func, *args, **kwargs):
+    """Runs one named atomic collection step (autoruns, MFT, VSS query, ...)
+    unless it's already marked done in progress['completed_steps'] (a
+    resume skips it and everything it already produced stays untouched on
+    disk), then marks it done and saves progress. Checks the stop flag
+    *before* starting the step -- these steps aren't internally
+    interruptible, so stop granularity here is "between named steps," same
+    as collect_standard_artifacts' "between categories." Returns False
+    (without running) if a stop was already requested."""
+    if is_stop_requested(STAGING_ROOT):
+        return False
+    if step_name in progress["completed_steps"]:
+        print(f"[*] Skipping already-completed step: {step_name}")
+        return True
+    func(*args, **kwargs)
+    progress["completed_steps"].append(step_name)
+    save_progress(STAGING_ROOT, progress)
+    return True
 
 def resolve_config_path(config_arg=None):
     if config_arg and os.path.exists(config_arg):
@@ -261,9 +341,22 @@ def copy_matched_path(src, dest_dir, category="Unknown"):
         return (copied, failed)
     return (0, 0)
 
-def collect_standard_artifacts(target_drive, artifact_targets):
+def collect_standard_artifacts(target_drive, artifact_targets, progress=None):
+    """If `progress` is given, categories already in
+    progress['completed_categories'] are skipped entirely (a resumed run),
+    and progress is saved to disk after each category completes so a stop
+    request between categories loses at most the one category in flight,
+    not everything collected so far. Returns True if it ran to completion,
+    False if it stopped early because a stop was requested."""
     print(f"\n[+] Starting Standard File Collection from {target_drive}...")
+    completed = set(progress["completed_categories"]) if progress else set()
     for category, paths in artifact_targets.items():
+        if category in completed:
+            print(f"[*] Skipping already-collected category: {category}")
+            continue
+        if progress and is_stop_requested(STAGING_ROOT):
+            log_warning(f"Stop requested -- halting before category '{category}'. Progress saved.")
+            return False
         raw_dest = os.path.join(STAGING_ROOT, category, "raw")
         os.makedirs(raw_dest, exist_ok=True)
         print(f"[*] Collecting Category: {category}")
@@ -293,6 +386,10 @@ def collect_standard_artifacts(target_drive, artifact_targets):
                 "matched_entries": len(matched), "files_copied": copied, "files_failed": failed
             }
         execution_report["Collection"][category] = cat_stats
+        if progress is not None:
+            progress["completed_categories"].append(category)
+            save_progress(STAGING_ROOT, progress)
+    return True
 
 def extract_sysinternals_autoruns(target_drive):
     print("\n[*] Starting Sysinternals Autoruns Deep Extraction...")
@@ -743,6 +840,44 @@ def save_json_report():
     except Exception as e:
         print(f"[-] Failed to save JSON report: {e}")
 
+def _load_prior_state_for_resume(staging_root):
+    """A resumed run must not silently lose the hash-verification record and
+    collection stats for categories collected *before* the stop -- both
+    execution_report.json and hash_manifest.csv are overwritten (not
+    appended) on every save, so without this, resuming would collect the
+    remaining categories fine but the final report/manifest would only ever
+    show this run's partial slice, even though every previously-collected
+    file is still safely on disk."""
+    report_path = os.path.join(staging_root, "execution_report.json")
+    if os.path.isfile(report_path):
+        try:
+            with open(report_path, "r", encoding="utf-8") as f:
+                prior = json.load(f)
+            execution_report["Collection"] = prior.get("Collection", {})
+            execution_report["Parsing"] = prior.get("Parsing", {})
+            prior_hv = prior.get("HashVerification", {})
+            execution_report["HashVerification"]["total_files"] = prior_hv.get("total_files", 0)
+            execution_report["HashVerification"]["verified"] = prior_hv.get("verified", 0)
+            execution_report["HashVerification"]["mismatched"] = prior_hv.get("mismatched", 0)
+            execution_report["HashVerification"]["hash_errors"] = prior_hv.get("hash_errors", 0)
+            execution_report["HashVerification"]["failures"] = prior_hv.get("failures", [])
+            execution_report["General"] = prior.get(
+                "General", {"Successes": [], "Warnings_Skipped": [], "Errors": []}
+            )
+        except Exception as e:
+            log_warning(f"Could not load prior execution_report.json for resume ({e}) -- stats restart from this run only.")
+
+    manifest_path = os.path.join(staging_root, "hash_manifest.csv")
+    if os.path.isfile(manifest_path):
+        try:
+            with open(manifest_path, "r", newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    row["size_bytes"] = int(row["size_bytes"]) if row.get("size_bytes") else None
+                    row["verified"] = row.get("verified") in ("True", "true", "1")
+                    hash_manifest_entries.append(row)
+        except Exception as e:
+            log_warning(f"Could not load prior hash_manifest.csv for resume ({e}).")
+
 
 def run_collection(target_drive: str, staging_root: str, config_path: str = None, scope: str = "ALL") -> dict:
     """
@@ -764,7 +899,11 @@ def run_collection(target_drive: str, staging_root: str, config_path: str = None
     STAGING_ROOT = staging_root
     os.makedirs(STAGING_ROOT, exist_ok=True)
 
-    # Reset global state for a fresh run
+    # A resumed run (collection_progress.json already exists here from a
+    # previous stop) must not wipe the hash-verification record and stats
+    # for whatever was already collected -- see _load_prior_state_for_resume.
+    # A genuinely fresh run starts every counter blank, as before.
+    is_resume = os.path.isfile(_progress_path(STAGING_ROOT))
     execution_report["Collection"] = {}
     execution_report["Parsing"] = {}
     execution_report["HashVerification"] = {
@@ -773,6 +912,14 @@ def run_collection(target_drive: str, staging_root: str, config_path: str = None
     }
     execution_report["General"] = {"Successes": [], "Warnings_Skipped": [], "Errors": []}
     hash_manifest_entries.clear()
+    if is_resume:
+        _load_prior_state_for_resume(STAGING_ROOT)  # re-seeds the dicts/list just cleared above
+
+    progress = load_progress(STAGING_ROOT, target_drive, scope)
+    # A stop flag only makes sense for *this specific run in progress* -- if
+    # one is somehow already sitting here when we start (a stale leftover),
+    # clear it so this fresh invocation doesn't halt before doing anything.
+    clear_stop_flag(STAGING_ROOT)
 
     is_file_scope = scope.upper() in ("FILE",)
     is_memory_scope = scope.upper() in ("MEMORY",)
@@ -795,28 +942,50 @@ def run_collection(target_drive: str, staging_root: str, config_path: str = None
             all_categories += EXTRA_CATEGORIES
     setup_staging_env(all_categories)
 
+    # Each step below only runs if nothing has requested a stop yet, and
+    # each one that actually runs checks for a stop request immediately
+    # before starting -- see _run_step_once()/collect_standard_artifacts()'s
+    # own docstrings for exactly what granularity that gives. `stopped`
+    # short-circuits every remaining step the moment any one of them halts.
+    stopped = False
     try:
         if is_memory_scope:
             log_success("Memory Analysis scope: skipping evidence collection. Upload memory dumps to MemoryDumps/raw.")
         else:
             if artifact_targets:
-                collect_standard_artifacts(target_drive, artifact_targets)
+                if not collect_standard_artifacts(target_drive, artifact_targets, progress=progress):
+                    stopped = True
             else:
                 log_warning("No artifact targets loaded -- skipping standard artifact collection entirely.")
 
-            if not is_memory_or_file:
-                extract_sysinternals_autoruns(target_drive)
+            if not stopped and not is_memory_or_file:
+                stopped = not _run_step_once(progress, "autoruns", extract_sysinternals_autoruns, target_drive)
 
-            extract_program_data_list(target_drive)
-            extract_high_risk_appdata_and_public(target_drive)
+            if not stopped:
+                stopped = not _run_step_once(progress, "program_data_list", extract_program_data_list, target_drive)
+            if not stopped:
+                stopped = not _run_step_once(
+                    progress, "appdata_public_sweep", extract_high_risk_appdata_and_public, target_drive
+                )
 
-            if not is_memory_or_file:
-                check_volume_shadow_copies(target_drive)
-                extract_mft(target_drive)
+            if not stopped and not is_memory_or_file:
+                stopped = not _run_step_once(progress, "vss_shadows", check_volume_shadow_copies, target_drive)
+                if not stopped:
+                    stopped = not _run_step_once(progress, "mft", extract_mft, target_drive)
 
-            scan_for_alternate_data_streams(target_drive)
+            if not stopped:
+                stopped = not _run_step_once(progress, "ads_scan", scan_for_alternate_data_streams, target_drive)
 
-            run_parsing_automation(scope=scope)
+            if not stopped:
+                stopped = not _run_step_once(progress, "parsing_automation", run_parsing_automation, scope=scope)
+
+        progress["stopped"] = stopped
+        save_progress(STAGING_ROOT, progress)
+        if stopped:
+            log_warning(
+                "Collection halted by analyst stop request -- progress saved. "
+                "Re-run with the same --staging directory (or click Continue Collecting) to pick up where this left off."
+            )
     except KeyboardInterrupt:
         log_error("Execution manually aborted by user (KeyboardInterrupt).")
     except Exception as fatal_e:
@@ -826,6 +995,7 @@ def run_collection(target_drive: str, staging_root: str, config_path: str = None
         save_json_report()
         save_hash_manifest()
 
+    execution_report["stopped_by_user"] = stopped
     return dict(execution_report)
 
 
