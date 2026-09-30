@@ -879,6 +879,59 @@ def _load_prior_state_for_resume(staging_root):
             log_warning(f"Could not load prior hash_manifest.csv for resume ({e}).")
 
 
+def run_folder_collection(folder_path: str, staging_root: str) -> dict:
+    """
+    Ingest a single arbitrary folder for File / Malware analysis, instead of
+    sweeping an entire drive. `folder_path` can be nested arbitrarily deep
+    on any drive (e.g. "D:\\Cases\\test\\suspect_files") -- unlike
+    run_collection(), it is not assumed to be a drive root, so none of the
+    Windows-specific artifact categories (registry hives, $MFT, VSS, etc.)
+    apply here; every file underneath it is simply hashed, copied, and
+    queued into ProgramDataList for the File Analysis pipeline to pick up.
+
+    Args:
+        folder_path: Absolute path to the folder to ingest.
+        staging_root: Absolute path to the staging directory.
+
+    Returns:
+        The execution_report dict with collection results.
+    """
+    global STAGING_ROOT
+    STAGING_ROOT = staging_root
+    os.makedirs(STAGING_ROOT, exist_ok=True)
+
+    execution_report["Collection"] = {}
+    execution_report["Parsing"] = {}
+    execution_report["HashVerification"] = {
+        "algorithm": HASH_ALGORITHM, "total_files": 0, "verified": 0,
+        "mismatched": 0, "hash_errors": 0, "failures": []
+    }
+    execution_report["General"] = {"Successes": [], "Warnings_Skipped": [], "Errors": []}
+    hash_manifest_entries.clear()
+
+    category = "ProgramDataList"
+    setup_staging_env([category])
+
+    if not os.path.isdir(folder_path):
+        log_error(f"Target folder not found or inaccessible: {folder_path}")
+        execution_report["Collection"][category] = {"files_found": 0, "files_copied": 0, "files_failed": 0}
+    else:
+        print(f"\n[+] Ingesting folder: {folder_path}...")
+        raw_dest = os.path.join(STAGING_ROOT, category, "raw")
+        copied, failed = copy_matched_path(folder_path, raw_dest, category)
+        execution_report["Collection"][category] = {
+            "files_found": copied + failed, "files_copied": copied, "files_failed": failed
+        }
+        log_success(f"Folder ingestion complete: {copied} file(s) verified, {failed} failed.")
+
+    print_execution_report()
+    save_json_report()
+    save_hash_manifest()
+
+    execution_report["stopped_by_user"] = False
+    return dict(execution_report)
+
+
 def run_collection(target_drive: str, staging_root: str, config_path: str = None, scope: str = "ALL") -> dict:
     """
     Run the full evidence collection pipeline programmatically.
@@ -1002,6 +1055,7 @@ def run_collection(target_drive: str, staging_root: str, config_path: str = None
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="IAI Forensic Collection Engine")
     parser.add_argument("--drive", help="Target drive letter (e.g. D:). Omit for interactive selection.")
+    parser.add_argument("--folder", help="Ingest a single arbitrary folder (any depth, any drive) instead of a whole drive. Takes precedence over --drive.")
     parser.add_argument("--staging", help="Staging directory path. Auto-generated if omitted.")
     parser.add_argument("--config", help="Path to collector_paths.json config file.")
     parser.add_argument("--scope", choices=["ALL", "WINDOWS", "FILE", "MEMORY"], default="ALL",
@@ -1015,11 +1069,13 @@ if __name__ == "__main__":
     if args.staging:
         STAGING_ROOT = args.staging
 
-    target_disk = args.drive if args.drive else select_drive()
-
-    run_collection(
-        target_drive=target_disk,
-        staging_root=STAGING_ROOT,
-        config_path=args.config,
-        scope=args.scope,
-    )
+    if args.folder:
+        run_folder_collection(folder_path=args.folder, staging_root=STAGING_ROOT)
+    else:
+        target_disk = args.drive if args.drive else select_drive()
+        run_collection(
+            target_drive=target_disk,
+            staging_root=STAGING_ROOT,
+            config_path=args.config,
+            scope=args.scope,
+        )

@@ -121,6 +121,46 @@ def register_routes(app):
     def list_drives():
         return jsonify({"drives": bridge.get_available_drives()})
 
+    @app.route("/api/browse-folder", methods=["GET"])
+    def browse_folder():
+        """Backs the in-app folder picker for 'investigate a specific
+        folder' -- lets the analyst click through drives/subfolders on this
+        machine instead of typing an absolute path. An empty path lists the
+        available drives as the browse root."""
+        path = (request.args.get("path") or "").strip()
+
+        if not path:
+            drives = bridge.get_available_drives()
+            entries = [{"name": f"{d['letter']}:\\", "path": f"{d['letter']}:\\"} for d in drives]
+            return jsonify({"success": True, "path": "", "parent": None, "entries": entries})
+
+        if len(path) == 2 and path[1] == ":":
+            path += "\\"
+
+        if not os.path.isdir(path):
+            return jsonify({"success": False, "error": "Folder not found or inaccessible."}), 400
+
+        try:
+            entries = []
+            with os.scandir(path) as it:
+                for entry in it:
+                    try:
+                        if entry.is_dir():
+                            entries.append({"name": entry.name, "path": entry.path})
+                    except OSError:
+                        continue
+            entries.sort(key=lambda e: e["name"].lower())
+        except PermissionError:
+            return jsonify({"success": False, "error": "Permission denied for this folder."}), 403
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+
+        _, tail = os.path.splitdrive(path)
+        is_drive_root = tail in ("\\", "/", "")
+        parent = "" if is_drive_root else os.path.dirname(path.rstrip("\\/"))
+
+        return jsonify({"success": True, "path": path, "parent": parent, "entries": entries})
+
     @app.route("/api/investigations/existing", methods=["GET"])
     def list_existing_investigations():
         return jsonify({"investigations": bridge.get_existing_investigations(search_root=PROJECT_ROOT)})
@@ -1023,20 +1063,27 @@ def register_routes(app):
         bridge.log_event(agent_name, "System prompt overridden by analyst.", level="INFO")
         return jsonify({"success": True, "agent_name": agent_name, "system_prompt": new_prompt})
 
-    def _run_collector_subprocess(staging_dir, drive_letter, scope):
+    def _run_collector_subprocess(staging_dir, drive_letter, scope, folder_path=None):
         """Spawns the collector subprocess, streams its stdout into the live
         log, and returns 'completed' / 'stopped' / 'failed'. 'stopped'
         specifically means the analyst clicked Stop Collecting: the flag
         file it left behind made the collector save collection_progress.json
         and exit cleanly (code 0), rather than being killed -- that's what
         lets Continue Collecting resume from exactly where it left off
-        instead of redoing everything."""
+        instead of redoing everything.
+
+        When folder_path is given, the collector ingests just that folder
+        (which may be nested arbitrarily deep on any drive) instead of
+        sweeping a whole drive letter."""
         collector_cmd = [
             sys.executable, "-m", "collectors.collector",
-            "--drive", drive_letter,
             "--staging", os.path.abspath(staging_dir),
             "--scope", scope,
         ]
+        if folder_path:
+            collector_cmd += ["--folder", folder_path]
+        else:
+            collector_cmd += ["--drive", drive_letter]
         proc = subprocess.Popen(
             collector_cmd,
             stdout=subprocess.PIPE,
@@ -1100,10 +1147,14 @@ def register_routes(app):
         staging_dir = data.get("staging_dir")
         scope = data.get("scope", "ALL").upper()
         drive_letter = data.get("drive_letter", "SKIP").strip()
+        target_folder = data.get("target_folder", "").strip()
         context_text = data.get("context_text", "").strip()
 
         if bridge.pipeline_status in ("RUNNING", "COLLECTING"):
             return jsonify({"success": False, "error": "Investigation is already running"}), 400
+
+        if target_folder and not os.path.isdir(target_folder):
+            return jsonify({"success": False, "error": f"Folder path does not exist or is not accessible: {target_folder}"}), 400
 
         from datetime import datetime
         is_new_investigation = not staging_dir or staging_dir == "NEW"
@@ -1132,12 +1183,13 @@ def register_routes(app):
 
         def run_wrapper():
             try:
-                # Phase 1: Run collector if drive was specified
-                if drive_letter != "SKIP":
-                    bridge.log_event("COLLECTOR", f"Starting evidence collection on {drive_letter} into {staging_dir}", level="INFO")
+                # Phase 1: Run collector if a drive or a custom folder was specified
+                if drive_letter != "SKIP" or target_folder:
+                    collection_label = target_folder or drive_letter
+                    bridge.log_event("COLLECTOR", f"Starting evidence collection on {collection_label} into {staging_dir}", level="INFO")
                     bridge.update_node_state("Master_Analyst_Agent", "GREEN")
                     bridge.pipeline_status = "COLLECTING"
-                    outcome = _run_collector_subprocess(staging_dir, drive_letter, scope)
+                    outcome = _run_collector_subprocess(staging_dir, drive_letter, scope, folder_path=target_folder or None)
                     if outcome == "failed":
                         bridge.pipeline_status = "ERROR"
                         return
@@ -1166,7 +1218,7 @@ def register_routes(app):
 
         return jsonify({
             "success": True,
-            "status": "COLLECTING" if drive_letter != "SKIP" else "RUNNING",
+            "status": "COLLECTING" if (drive_letter != "SKIP" or target_folder) else "RUNNING",
             "staging_dir": staging_dir,
             "scope": scope
         })

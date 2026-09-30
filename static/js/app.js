@@ -52,6 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loadSetupData();
     initCanvasInteraction();
     initFileHints();
+    initAddFileInput();
     onScopeChange();
 
     // Set up polling loop every 2 seconds
@@ -271,6 +272,10 @@ async function fetchStatus() {
         const navBadge = document.getElementById("nav-pending-badge");
         if (navBadge) navBadge.textContent = data.pending_count;
 
+        const hasPending = (data.pending_count || 0) > 0;
+        const pendingChip = document.getElementById("pending-chip");
+        if (pendingChip) pendingChip.classList.toggle("attention", hasPending);
+
         // Update active dashboard play/pause button states
         const btnPause = document.getElementById("btn-pause-pipeline");
         const btnResume = document.getElementById("btn-resume-pipeline");
@@ -292,6 +297,9 @@ async function fetchStatus() {
 
         const kpiPending = document.getElementById("kpi-pending");
         if (kpiPending) kpiPending.textContent = data.pending_count;
+
+        const pendingCard = document.getElementById("metric-card-pending");
+        if (pendingCard) pendingCard.classList.toggle("attention", hasPending);
 
         const kpiNodes = document.getElementById("kpi-nodes");
         if (kpiNodes) kpiNodes.textContent = data.total_nodes;
@@ -577,7 +585,9 @@ async function deleteInvestigation(folderName) {
 }
 
 function onScopeChange() {
-    const scope = document.getElementById("scope-selector").value;
+    const scopeSelector = document.getElementById("scope-selector");
+    if (!scopeSelector) return;
+    const scope = scopeSelector.value;
     const fileArea = document.getElementById("file-upload-area");
     const memoryArea = document.getElementById("memory-upload-area");
     const extractorArea = document.getElementById("extractor-upload-area");
@@ -589,19 +599,25 @@ function onScopeChange() {
 
 async function launchNewSwarm() {
     const driveLetter = document.getElementById("drive-selector").value;
+    const folderPath = document.getElementById("folder-path-input").value.trim();
     const scope = document.getElementById("scope-selector").value;
     const contextText = document.getElementById("setup-case-context").value.trim();
 
+    if (folderPath && scope === "MEMORY") {
+        showToast("A custom folder path can't be used with the Memory Analysis scope -- upload a memory dump instead.", "warning");
+        return;
+    }
+
     // Validate required arguments based on scope
-    if (driveLetter === "SKIP" && scope !== "MEMORY") {
+    if (driveLetter === "SKIP" && !folderPath && scope !== "MEMORY") {
         const fileUploader = document.getElementById("file-uploader");
         const hasFiles = fileUploader && fileUploader.files.length > 0;
         if (scope === "FILE" && !hasFiles) {
-            showToast("File / Malware Analysis scope requires either a target drive or file uploads.", "warning");
+            showToast("File / Malware Analysis scope requires a target drive, a custom folder, or file uploads.", "warning");
             return;
         }
         if (scope === "ALL" && !hasFiles) {
-            showToast("Full System Analysis scope requires a target drive for collection.", "warning");
+            showToast("Full System Analysis scope requires a target drive or a custom folder for collection.", "warning");
             return;
         }
         if (scope === "WINDOWS") {
@@ -629,6 +645,7 @@ async function launchNewSwarm() {
                 staging_dir: stagingDir,
                 scope: scope,
                 drive_letter: driveLetter,
+                target_folder: folderPath,
                 context_text: contextText
             })
         });
@@ -682,6 +699,169 @@ async function handleFileUploads(stagingDir) {
             formData.append("file", extractorUploader.files[i]);
             await fetch("/api/upload/extract", { method: "POST", body: formData });
         }
+    }
+}
+
+// ==========================================
+// FOLDER BROWSER (in-app "Explorer" for picking an investigation folder,
+// backed by /api/browse-folder -- lets the analyst click through
+// drives/subfolders on this machine instead of typing an absolute path)
+// ==========================================
+
+function openFolderBrowser() {
+    navigateFolderBrowser("");
+    document.getElementById("folder-browser-overlay").classList.add("open");
+}
+
+function closeFolderBrowser() {
+    const overlay = document.getElementById("folder-browser-overlay");
+    if (!overlay) return;
+    overlay.classList.remove("open");
+    setTimeout(() => { overlay.innerHTML = ""; }, 180);
+}
+
+async function navigateFolderBrowser(path) {
+    const overlay = document.getElementById("folder-browser-overlay");
+    if (!overlay) return;
+
+    const box = document.createElement("div");
+    box.className = "confirm-box folder-browser-box";
+
+    const title = document.createElement("div");
+    title.className = "confirm-title";
+    const titleIcon = document.createElement("span");
+    titleIcon.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>';
+    title.appendChild(titleIcon);
+    const titleText = document.createElement("span");
+    titleText.textContent = "Choose a folder to investigate";
+    title.appendChild(titleText);
+    box.appendChild(title);
+
+    const pathBar = document.createElement("div");
+    pathBar.className = "folder-browser-path";
+    pathBar.textContent = path || "This computer";
+    box.appendChild(pathBar);
+
+    const list = document.createElement("div");
+    list.className = "folder-browser-list";
+    box.appendChild(list);
+
+    overlay.innerHTML = "";
+    overlay.appendChild(box);
+
+    const loading = document.createElement("div");
+    loading.className = "empty-state";
+    loading.textContent = "Loading...";
+    list.appendChild(loading);
+
+    let browseData = null;
+    try {
+        const res = await fetch(`/api/browse-folder?path=${encodeURIComponent(path)}`);
+        browseData = await res.json();
+    } catch (e) {
+        browseData = { success: false, error: "Could not reach the server." };
+    }
+
+    list.innerHTML = "";
+
+    if (!browseData.success) {
+        const err = document.createElement("div");
+        err.className = "empty-state";
+        err.textContent = browseData.error || "Could not list this folder.";
+        list.appendChild(err);
+    } else {
+        if (browseData.parent !== null) {
+            const backRow = document.createElement("div");
+            backRow.className = "folder-browser-row folder-browser-back";
+            backRow.textContent = ".. (up one level)";
+            backRow.addEventListener("click", () => navigateFolderBrowser(browseData.parent));
+            list.appendChild(backRow);
+        }
+        if (!browseData.entries || browseData.entries.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "empty-state";
+            empty.textContent = "No subfolders here.";
+            list.appendChild(empty);
+        } else {
+            browseData.entries.forEach(entry => {
+                const row = document.createElement("div");
+                row.className = "folder-browser-row";
+                const icon = document.createElement("span");
+                icon.innerHTML = '<svg class="icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>';
+                row.appendChild(icon);
+                const name = document.createElement("span");
+                name.textContent = entry.name;
+                row.appendChild(name);
+                row.addEventListener("click", () => navigateFolderBrowser(entry.path));
+                list.appendChild(row);
+            });
+        }
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "confirm-actions";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "btn btn-outline";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", closeFolderBrowser);
+    actions.appendChild(cancelBtn);
+
+    if (path) {
+        const selectBtn = document.createElement("button");
+        selectBtn.className = "btn btn-primary";
+        selectBtn.textContent = "Use This Folder";
+        selectBtn.addEventListener("click", () => {
+            document.getElementById("folder-path-input").value = path;
+            closeFolderBrowser();
+        });
+        actions.appendChild(selectBtn);
+    }
+
+    box.appendChild(actions);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const overlay = document.getElementById("folder-browser-overlay");
+    if (overlay) {
+        overlay.addEventListener("click", (e) => { if (e.target === overlay) closeFolderBrowser(); });
+    }
+});
+
+function initAddFileInput() {
+    const input = document.getElementById("add-file-input");
+    if (!input) return;
+    input.addEventListener("change", () => handleAddFileMidSession(input.files));
+}
+
+async function handleAddFileMidSession(files) {
+    if (!files || files.length === 0) return;
+    const stagingDir = currentState.active_investigation_id;
+    if (!stagingDir) {
+        showToast("No active investigation to add files to.", "warning");
+        return;
+    }
+
+    let staged = 0;
+    for (let i = 0; i < files.length; i++) {
+        const formData = new FormData();
+        formData.append("staging_dir", stagingDir);
+        formData.append("file", files[i]);
+        try {
+            const res = await fetch("/api/upload/extract", { method: "POST", body: formData });
+            const data = await res.json();
+            if (data.success) staged++;
+        } catch (e) {
+            console.error("Add file error:", e);
+        }
+    }
+
+    document.getElementById("add-file-input").value = "";
+    if (staged > 0) {
+        showToast(`${staged} ${fileWord(staged)} added to the running investigation.`, "success");
+        fetchLogs();
+    } else {
+        showToast("Could not add the file(s) to the investigation.", "error");
     }
 }
 

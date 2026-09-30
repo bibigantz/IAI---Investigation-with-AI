@@ -46,6 +46,20 @@
     --text-secondary: #a3aebd;
     --text-tertiary: #626d7c;
 
+    /* ---- fixed dark-console text ----
+       Used only by elements that keep a hardcoded dark background in both
+       themes (.terminal-box, .code-viewer -- see the note on the light
+       theme block below). Deliberately NOT redefined under
+       html[data-theme="light"], so text drawn on those consoles stays
+       legible instead of flipping to light-mode's near-black tones. */
+    --console-text-primary: #eef1f6;
+    --console-text-secondary: #a3aebd;
+    --console-text-tertiary: #626d7c;
+    --console-brand: #2dd4bf;
+    --console-danger: #fb5273;
+    --console-yellow: #f2a93b;
+    --console-yellow-dim: rgba(242, 169, 59, 0.16);
+
     /* ---- type ---- */
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-mono: 'Fira Code', 'SFMono-Regular', Consolas, monospace;
@@ -375,6 +389,27 @@ p { margin: 0; }
     font-family: var(--font-mono);
 }
 
+/* Draws the eye to a pending HITL approval waiting on the analyst --
+   applied/removed from JS (fetchStatus()) based on pending_count > 0. */
+.pending-chip.attention {
+    color: var(--danger);
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    border-radius: var(--r-full);
+    padding: 0.3rem 0.7rem;
+    animation: pending-flicker 1.1s ease-in-out infinite;
+}
+.pending-chip.attention strong { color: var(--danger); }
+
+.metric-card.attention {
+    animation: pending-flicker 1.1s ease-in-out infinite;
+}
+
+@keyframes pending-flicker {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(251, 82, 115, 0.45); }
+    50% { opacity: 0.5; box-shadow: 0 0 0 5px rgba(251, 82, 115, 0); }
+}
+
 /* ==========================================================================
    LAYOUT
    ========================================================================== */
@@ -602,21 +637,21 @@ p { margin: 0; }
     border-radius: 4px;
 }
 
-.log-time { color: var(--text-tertiary); flex-shrink: 0; }
-.log-source { color: var(--brand); font-weight: 600; min-width: 150px; flex-shrink: 0; }
-.log-msg { color: var(--text-secondary); flex: 1; word-break: break-word; }
+.log-time { color: var(--console-text-tertiary); flex-shrink: 0; }
+.log-source { color: var(--console-brand); font-weight: 600; min-width: 150px; flex-shrink: 0; }
+.log-msg { color: var(--console-text-secondary); flex: 1; word-break: break-word; }
 
 .log-line.HITL {
-    background: var(--state-yellow-dim);
-    box-shadow: inset 2px 0 0 var(--state-yellow);
+    background: var(--console-yellow-dim);
+    box-shadow: inset 2px 0 0 var(--console-yellow);
 }
-.log-line.HITL .log-msg { color: var(--text-primary); }
+.log-line.HITL .log-msg { color: var(--console-text-primary); }
 
-.log-line.ERROR .log-msg { color: var(--danger); }
-.log-line.WARN .log-msg { color: var(--state-yellow); }
+.log-line.ERROR .log-msg { color: var(--console-danger); }
+.log-line.WARN .log-msg { color: var(--console-yellow); }
 
 .terminal-empty {
-    color: var(--text-tertiary);
+    color: var(--console-text-tertiary);
     font-size: 0.82rem;
     padding: var(--sp-4);
     text-align: center;
@@ -982,7 +1017,7 @@ textarea.form-textarea { font-family: var(--font-mono); font-size: 0.82rem; resi
     white-space: pre-wrap;
     word-break: break-word;
 }
-.code-viewer.placeholder { color: var(--text-tertiary); font-family: var(--font-sans); font-style: italic; }
+.code-viewer.placeholder { color: var(--console-text-tertiary); font-family: var(--font-sans); font-style: italic; }
 
 .split-view {
     display: grid;
@@ -1260,6 +1295,43 @@ textarea.form-textarea { font-family: var(--font-mono); font-size: 0.82rem; resi
 .confirm-title .icon { color: var(--state-yellow); }
 .confirm-copy { font-size: 0.86rem; color: var(--text-secondary); margin-bottom: var(--sp-5); line-height: 1.5; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 0.6rem; }
+
+.folder-browser-box { width: 480px; }
+.folder-browser-box .confirm-title .icon { color: var(--brand); }
+.folder-browser-path {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 0.5rem 0.7rem;
+    margin-bottom: var(--sp-3);
+    word-break: break-all;
+}
+.folder-browser-list {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    margin-bottom: var(--sp-4);
+}
+.folder-browser-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.folder-browser-row:last-child { border-bottom: none; }
+.folder-browser-row:hover { background: var(--surface-2); color: var(--brand); }
+.folder-browser-row .icon { width: 1.05em; height: 1.05em; color: var(--text-tertiary); flex-shrink: 0; }
+.folder-browser-row:hover .icon { color: var(--brand); }
+.folder-browser-row.folder-browser-back { color: var(--text-tertiary); font-style: italic; }
 
 /* ==========================================================================
    UTILITIES

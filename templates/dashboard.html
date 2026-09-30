@@ -27,6 +27,18 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label">
+                    <svg class="icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+                    ...or investigate a specific folder instead
+                </label>
+                <div class="flex gap-3">
+                    <input type="text" id="folder-path-input" class="form-input" style="flex: 1;" placeholder="No folder selected" readonly>
+                    <button type="button" class="btn btn-outline" onclick="openFolderBrowser()">Browse&hellip;</button>
+                </div>
+                <div class="form-hint">Browse to any folder on this machine, no matter how deeply nested (a folder named "test" buried inside a drive works fine) -- its contents are ingested for File / Malware analysis without collecting the whole drive.</div>
+            </div>
+
+            <div class="form-group">
                 <label class="form-label">Investigation scope filter</label>
                 <select id="scope-selector" class="form-select" onchange="onScopeChange()">
                     <option value="ALL">Full system analysis (all tiers)</option>
@@ -120,7 +132,7 @@
             <div class="metric-value accent-yellow" id="kpi-mode">SUPERVISED</div>
             <div class="metric-sub">Human-in-the-loop active</div>
         </div>
-        <div class="metric-card" style="--metric-tint: rgba(242,169,59,0.14);">
+        <div class="metric-card" style="--metric-tint: rgba(242,169,59,0.14);" id="metric-card-pending">
             <div class="metric-label">Pending HITL approvals</div>
             <div class="metric-value accent-yellow" id="kpi-pending">0</div>
             <div class="metric-sub">Paused sub-agents</div>
@@ -188,10 +200,16 @@
             </button>
         </div>
 
-        <div class="flex gap-3" style="align-items: center;">
+        <div class="flex gap-3" style="align-items: center; flex-wrap: wrap;">
             <span class="text-dim" style="font-size: 0.82rem;">Quick context injection</span>
             <input type="text" id="active-quick-context" class="form-input" style="width: 280px;" placeholder="Inject new keywords or threat context...">
             <button class="btn btn-primary" onclick="injectQuickContext()">Update</button>
+
+            <input type="file" id="add-file-input" style="display:none;" multiple>
+            <button class="btn btn-outline" title="Add a file to this running investigation" onclick="document.getElementById('add-file-input').click()">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+                Add File
+            </button>
         </div>
     </div>
 
