@@ -2671,6 +2671,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (document.getElementById("sigma-table-body")) fetchSigmaRules();
     if (document.getElementById("baselines-table-body")) fetchBaselineHashes();
     if (document.getElementById("llm-provider-label")) fetchLlmConfig();
+    if (document.getElementById("triage-enabled")) { fetchTriageConfig(); fetchTriageLog(); }
     if (document.getElementById("retention-summary-cards")) { fetchRetentionSummary(); fetchRetentionPolicies(); }
     if (document.getElementById("users-table-body")) { fetchUsers(); fetchGlobalAuditLog(); }
 });
@@ -3220,6 +3221,121 @@ async function testLlmConfig() {
     } catch (e) {
         resultEl.textContent = "✗ Test request failed.";
     }
+}
+
+// ---- Fast-Pass Severity Triage ----
+
+const TRIAGE_THRESHOLD_PRESETS = { Low: 0.25, Medium: 0.50, High: 0.80, Critical: 0.90 };
+
+function onTriageThresholdSlide(value) {
+    document.getElementById("triage-threshold-readout").textContent = parseFloat(value).toFixed(2);
+}
+
+function setTriageThresholdPreset(label) {
+    const value = TRIAGE_THRESHOLD_PRESETS[label];
+    if (value === undefined) return;
+    document.getElementById("triage-threshold-slider").value = value;
+    onTriageThresholdSlide(value);
+}
+
+async function fetchTriageConfig() {
+    try {
+        const res = await fetch("/api/management/triage-config");
+        const data = await res.json();
+        document.getElementById("triage-enabled").checked = !!data.enabled;
+        document.getElementById("triage-base-url").value = data.base_url || "";
+        document.getElementById("triage-model-name").value = data.model_name || "";
+        document.getElementById("triage-timeout").value = data.timeout_seconds || 8;
+        const threshold = (data.severity_threshold !== undefined && data.severity_threshold !== null) ? data.severity_threshold : 0.8;
+        document.getElementById("triage-threshold-slider").value = threshold;
+        onTriageThresholdSlide(threshold);
+        document.getElementById("triage-updated-hint").textContent = data.updated_at ? `Last updated ${data.updated_at}` : "";
+    } catch (e) {
+        console.error("Fetch triage config error:", e);
+    }
+}
+
+async function saveTriageConfig() {
+    const body = {
+        enabled: document.getElementById("triage-enabled").checked,
+        base_url: document.getElementById("triage-base-url").value.trim(),
+        model_name: document.getElementById("triage-model-name").value.trim(),
+        severity_threshold: parseFloat(document.getElementById("triage-threshold-slider").value),
+        timeout_seconds: parseInt(document.getElementById("triage-timeout").value, 10) || 8,
+    };
+    try {
+        const res = await fetch("/api/management/triage-config", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast("Fast-pass triage configuration saved.", "success");
+            fetchTriageConfig();
+        } else {
+            showToast("Save failed.", "error");
+        }
+    } catch (e) {
+        showToast("Request failed.", "error");
+    }
+}
+
+async function testTriageConnection() {
+    const resultEl = document.getElementById("triage-test-result");
+    resultEl.textContent = "Testing connection...";
+    const body = {
+        base_url: document.getElementById("triage-base-url").value.trim(),
+        model_name: document.getElementById("triage-model-name").value.trim(),
+        timeout_seconds: parseInt(document.getElementById("triage-timeout").value, 10) || 8,
+    };
+    try {
+        const res = await fetch("/api/management/triage-config/test", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (data.success) {
+            resultEl.textContent = `✓ Reachable -- responded in ${data.elapsed_seconds}s ("${data.reply}").`;
+            showToast("Triage endpoint is reachable.", "success");
+        } else {
+            resultEl.textContent = "✗ " + data.error;
+            showToast("Triage connection test failed.", "error");
+        }
+    } catch (e) {
+        resultEl.textContent = "✗ Test request failed.";
+    }
+}
+
+async function fetchTriageLog() {
+    try {
+        const res = await fetch("/api/management/triage-log?limit=100");
+        const data = await res.json();
+        renderTriageLog(data.entries || []);
+    } catch (e) {
+        console.error("Fetch triage log error:", e);
+    }
+}
+
+function renderTriageLog(entries) {
+    const body = document.getElementById("triage-log-table-body");
+    const empty = document.getElementById("triage-log-empty");
+    if (!body) return;
+    body.innerHTML = "";
+    if (empty) empty.style.display = entries.length === 0 ? "block" : "none";
+    entries.forEach(entry => {
+        const tr = document.createElement("tr");
+        [
+            entry.agent_name,
+            entry.severity_label,
+            (entry.severity_score !== undefined && entry.severity_score !== null) ? entry.severity_score.toFixed(2) : "",
+            entry.outcome,
+            entry.summary || "",
+            entry.created_at,
+        ].forEach(val => {
+            const td = document.createElement("td");
+            td.textContent = val;
+            tr.appendChild(td);
+        });
+        body.appendChild(tr);
+    });
 }
 
 // ---- Retention ----

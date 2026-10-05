@@ -6,14 +6,15 @@ from flask import render_template, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from bridge.hitl_bridge import bridge
-from core import exclusion_engine, yara_engine, retention, sigma_engine
+from core import exclusion_engine, yara_engine, retention, sigma_engine, triage_engine
 from web.auth import current_user
 from db.database import get_session
 from db.models import (
     ExclusionRule, User, LlmProviderConfig, YaraRule, SigmaRule, RetentionPolicy, AuditLogEntry,
+    TriageConfig, TriagedArtifact,
 )
 
-MANAGEMENT_TABS = ["exclusions", "yara-sigma", "baselines", "llm", "retention", "access"]
+MANAGEMENT_TABS = ["exclusions", "yara-sigma", "baselines", "llm", "triage", "retention", "access"]
 
 
 def register_management_routes(app):
@@ -210,6 +211,83 @@ def register_management_routes(app):
             return jsonify({"success": False, "error": "Timed out after 15s -- endpoint unreachable or model too slow to respond."}), 502
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 502
+
+    # ==========================================================================
+    # FAST-PASS SEVERITY TRIAGE (optional local pre-filter ahead of the deep
+    # generative LLM pipeline -- see core/triage_engine.py and
+    # core/base_agent.py:run_with_hitl)
+    # ==========================================================================
+
+    @app.route("/api/management/triage-config", methods=["GET"])
+    def get_triage_config_route():
+        with get_session() as session:
+            row = session.get(TriageConfig, 1)
+            return jsonify({
+                "enabled": bool(row.enabled), "base_url": row.base_url, "model_name": row.model_name,
+                "severity_threshold": row.severity_threshold, "timeout_seconds": row.timeout_seconds,
+                "updated_at": row.updated_at,
+            })
+
+    @app.route("/api/management/triage-config", methods=["POST"])
+    def update_triage_config():
+        data = request.json or {}
+        with get_session() as session:
+            row = session.get(TriageConfig, 1)
+            if "enabled" in data:
+                row.enabled = bool(data["enabled"])
+            row.base_url = data.get("base_url", row.base_url)
+            row.model_name = data.get("model_name", row.model_name)
+            if "severity_threshold" in data:
+                row.severity_threshold = max(0.0, min(1.0, float(data["severity_threshold"])))
+            if "timeout_seconds" in data:
+                row.timeout_seconds = max(1, int(data["timeout_seconds"]))
+            row.updated_at = datetime.now(timezone.utc).isoformat()
+            enabled_after = row.enabled
+        bridge.log_event(
+            "MANAGEMENT",
+            f"Fast-Pass Severity Triage config updated by {current_user()['username']} "
+            f"(enabled={enabled_after})",
+            level="WARN",
+        )
+        return jsonify({"success": True})
+
+    @app.route("/api/management/triage-config/test", methods=["POST"])
+    def test_triage_config():
+        """Validates local triage service connectivity independently of the
+        LLM Provider Configuration's own Test Connection -- a different
+        service binding entirely, so it needs its own probe."""
+        data = request.json or {}
+        with get_session() as session:
+            row = session.get(TriageConfig, 1)
+            base_url = data.get("base_url") or row.base_url
+            model_name = data.get("model_name") or row.model_name
+            timeout_seconds = int(data.get("timeout_seconds") or row.timeout_seconds or 8)
+
+        result = triage_engine.test_connection(base_url, model_name, timeout=timeout_seconds)
+        return jsonify(result), (200 if result.get("success") else 502)
+
+    @app.route("/api/management/triage-log", methods=["GET"])
+    def list_triage_log():
+        """Recent fast-pass triage decisions -- the 'indexed into the case
+        database for historical reference' audit trail for suppressed and
+        escalated artifacts."""
+        limit = min(int(request.args.get("limit", 100)), 500)
+        with get_session() as session:
+            rows = (
+                session.query(TriagedArtifact)
+                .order_by(TriagedArtifact.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return jsonify({"entries": [
+                {
+                    "record_id": r.record_id, "case_staging_dir": r.case_staging_dir,
+                    "agent_name": r.agent_name, "severity_score": r.severity_score,
+                    "severity_label": r.severity_label, "summary": r.summary,
+                    "outcome": r.outcome, "created_at": r.created_at,
+                }
+                for r in rows
+            ]})
 
     # ==========================================================================
     # YARA RULES

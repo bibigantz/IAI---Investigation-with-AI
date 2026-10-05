@@ -39,6 +39,8 @@ def _seed_defaults():
             ))
         if session.get(models.LlmProviderConfig, 1) is None:
             session.add(models.LlmProviderConfig(id=1))
+        if session.get(models.TriageConfig, 1) is None:
+            session.add(models.TriageConfig(id=1))
 
 
 @contextmanager

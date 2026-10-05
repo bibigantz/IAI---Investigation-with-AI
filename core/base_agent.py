@@ -526,6 +526,85 @@ class BaseHITLAgent:
                 return HumanFeedback(action="REVISE", feedback=feedback)
             return HumanFeedback(action="APPROVE")
 
+    async def _run_fast_pass_triage(self, parsed_tool_data: Any) -> Optional[Dict[str, Any]]:
+        """Optional local "System One" pre-filter (core/triage_engine.py), run
+        ahead of the deep generative LLM call. Returns None when the feature
+        is disabled OR the local triage service is unreachable/times out --
+        in both cases the caller proceeds exactly as if this feature didn't
+        exist, satisfying the "Graceful Fallback" / zero-disruption
+        requirement. Never raises.
+        """
+        try:
+            from core import triage_engine
+            from bridge.hitl_bridge import bridge
+        except Exception:
+            return None
+
+        config = triage_engine.get_triage_config()
+        if not config.get("enabled"):
+            return None
+
+        staging_dir = getattr(bridge, "active_investigation_id", None)
+
+        try:
+            verdict = await triage_engine.evaluate_severity(str(parsed_tool_data), self.agent_name, config)
+        except triage_engine.TriageUnavailableError as e:
+            bridge.log_event(
+                self.agent_name,
+                f"Fast-pass triage service unreachable ({e}) -- falling back to standard deep analysis.",
+                level="WARN",
+            )
+            return None
+        except Exception:
+            return None
+
+        threshold = float(config.get("severity_threshold", 0.8))
+        route_to_deep = verdict["severity_score"] >= threshold
+        triage_engine.log_triage_decision(
+            staging_dir, self.agent_name, verdict["severity_score"], verdict["severity_label"],
+            verdict["summary"], "routed_high_severity" if route_to_deep else "suppressed",
+            str(parsed_tool_data),
+        )
+        bridge.log_event(
+            self.agent_name,
+            f"Fast-pass triage: {verdict['severity_label']} ({verdict['severity_score']:.2f}) -- "
+            + ("routing to deep analysis." if route_to_deep else "suppressed from deep LLM analysis (below threshold)."),
+            level="INFO",
+        )
+
+        result: Dict[str, Any] = {
+            "route_to_deep_analysis": route_to_deep,
+            "severity_score": verdict["severity_score"],
+            "severity_label": verdict["severity_label"],
+            "summary": verdict["summary"],
+        }
+        if route_to_deep:
+            result["metadata_note"] = (
+                f"[FAST-PASS TRIAGE PRE-FILTER RESULT: severity={verdict['severity_label']} "
+                f"(score {verdict['severity_score']:.2f}) -- {verdict['summary'] or 'no summary provided'}. "
+                "This flagged the artifact for full deep analysis; use it as context, not a substitute "
+                "for your own independent analysis.]"
+            )
+        else:
+            result["suppressed_analysis"] = {
+                "agent_name": self.agent_name,
+                "status": "Suspicious" if verdict["severity_label"] == "Medium" else "Clean",
+                "anomalies_found": [] if verdict["severity_label"] == "Low" else [{
+                    "filepath": "N/A",
+                    "anomaly_type": "Fast-Pass Triage Flag",
+                    "severity": verdict["severity_label"],
+                    "justification": verdict["summary"] or "Local fast-pass triage model flagged this as worth a second look.",
+                    "recommended_action": "Click Revise to request a full deep LLM analysis if this needs further review.",
+                }],
+                "summary": (
+                    f"[FAST-PASS TRIAGE -- {verdict['severity_label']} severity ({verdict['severity_score']:.2f}), "
+                    "below the configured threshold, so generative deep analysis was skipped to save tokens. "
+                    f"{verdict['summary']} Approve to accept this fast-pass result, or Revise to request a full "
+                    "deep LLM re-analysis.]"
+                ),
+            }
+        return result
+
     async def run_with_hitl(self, parsed_tool_data: Any) -> AgentResponse:
         try:
             from bridge.hitl_bridge import bridge
@@ -533,13 +612,22 @@ class BaseHITLAgent:
         except Exception:
             pass
 
+        triage_result = await self._run_fast_pass_triage(parsed_tool_data)
+        fast_pass_suppressed = bool(triage_result) and not triage_result["route_to_deep_analysis"]
+
         self.conversation_history.append({
             "role": "user",
             "content": f"Analyze this newly extracted forensic data:\n{parsed_tool_data}"
         })
+        if triage_result and triage_result["route_to_deep_analysis"]:
+            self.conversation_history.append({"role": "user", "content": triage_result["metadata_note"]})
 
         while True:
-            ai_conclusion_dict = await self.execute_llm_analysis(parsed_tool_data)
+            if fast_pass_suppressed:
+                ai_conclusion_dict = triage_result["suppressed_analysis"]
+            else:
+                ai_conclusion_dict = await self.execute_llm_analysis(parsed_tool_data)
+
             current_state = AgentResponse(
                 agent_name=self.agent_name,
                 raw_data_parsed=parsed_tool_data,
@@ -553,11 +641,44 @@ class BaseHITLAgent:
                 return current_state
 
             elif human_decision.action == "REVISE":
-                self.conversation_history.append({"role": "assistant", "content": json.dumps(ai_conclusion_dict)})
-                self.conversation_history.append({
-                    "role": "user",
-                    "content": f"Human Analyst Override: {human_decision.feedback}. Fix your analysis and return updated JSON."
-                })
+                if fast_pass_suppressed:
+                    # Analyst explicitly requested a full deep analysis of a
+                    # fast-pass-suppressed finding -- this IS the "explicitly
+                    # requested via the UI / HITL queue" escalation path,
+                    # reusing the existing Approve/Revise HITL controls rather
+                    # than a separate queue UI.
+                    fast_pass_suppressed = False
+                    try:
+                        from core import triage_engine
+                        from bridge.hitl_bridge import bridge
+                        staging_dir = getattr(bridge, "active_investigation_id", None)
+                        triage_engine.log_triage_decision(
+                            staging_dir, self.agent_name, triage_result["severity_score"],
+                            triage_result["severity_label"], triage_result["summary"], "escalated",
+                        )
+                        bridge.log_event(
+                            self.agent_name,
+                            "Analyst escalated a fast-pass-suppressed finding to full deep analysis.",
+                            level="HITL",
+                        )
+                    except Exception:
+                        pass
+                    feedback_note = f" Analyst note: {human_decision.feedback}" if human_decision.feedback else ""
+                    self.conversation_history.append({
+                        "role": "user",
+                        "content": (
+                            "Analyst requested a full deep analysis of this fast-pass-suppressed artifact "
+                            f"(originally scored {triage_result['severity_score']:.2f}, "
+                            f"{triage_result['severity_label']})."
+                            f"{feedback_note} Perform complete forensic analysis now and return updated JSON."
+                        )
+                    })
+                else:
+                    self.conversation_history.append({"role": "assistant", "content": json.dumps(ai_conclusion_dict)})
+                    self.conversation_history.append({
+                        "role": "user",
+                        "content": f"Human Analyst Override: {human_decision.feedback}. Fix your analysis and return updated JSON."
+                    })
 
     async def run_automated_with_hitl(self, parsed_tool_data: Any, deterministic_analysis: Dict) -> AgentResponse:
         """HITL loop for pure-automation agents (deterministic correlation/rule

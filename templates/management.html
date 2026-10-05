@@ -20,6 +20,7 @@
 
         <div class="mgmt-nav-group-label">AI &amp; Agent Orchestration</div>
         <a href="/management/llm" class="mgmt-nav-item {% if active_tab == 'llm' %}selected{% endif %}">LLM Provider Configuration</a>
+        <a href="/management/triage" class="mgmt-nav-item {% if active_tab == 'triage' %}selected{% endif %}">Fast-Pass Severity Triage</a>
 
         <div class="mgmt-nav-group-label">Data Lifecycle &amp; Retention</div>
         <a href="/management/retention" class="mgmt-nav-item {% if active_tab == 'retention' %}selected{% endif %}">Evidence Storage &amp; Retention</a>
@@ -136,6 +137,64 @@
             <button class="btn btn-outline" onclick="testLlmConfig()">Test Connection</button>
             <p class="form-hint" id="llm-updated-hint" style="margin-top:0.6rem;"></p>
             <p class="form-hint" id="llm-test-result" style="margin-top:0.4rem;"></p>
+        </div>
+
+        {% elif active_tab == 'triage' %}
+        <div class="panel" id="mgmt-triage-panel">
+            <div class="panel-title">Fast-Pass Severity Triage</div>
+            <p class="panel-meta">An optional, local "System One" pre-filter that runs ahead of the deep generative LLM pipeline. When enabled, each agent's raw artifact payload is scored for severity by a small local model first; only artifacts meeting the threshold below are forwarded for full generative analysis, saving tokens and keeping low-severity noise out of the deep pipeline's context window. Disabled by default -- this never replaces or overrides the LLM Provider Configuration above, and if the local triage service is unreachable, every artifact silently falls back to the standard pipeline with zero disruption.</p>
+
+            <div class="form-group form-checkbox-row">
+                <label>
+                    <input type="checkbox" id="triage-enabled">
+                    Enable Fast-Pass Severity Pre-Filtering
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Triage Endpoint / Service Binding <span class="form-hint">(local loopback only -- this feature never makes an outbound network call)</span></label>
+                <input type="text" id="triage-base-url" class="form-input" placeholder="http://localhost:11434">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Local model name</label>
+                <input type="text" id="triage-model-name" class="form-input" placeholder="llama3.2:1b">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Severity threshold <span class="form-hint">(artifacts scoring at or above this are forwarded to the deep generative agents; below it, they're logged and suppressed from the deep pipeline)</span></label>
+                <div class="triage-threshold-row" style="display:flex; align-items:center; gap: var(--sp-3);">
+                    <input type="range" id="triage-threshold-slider" min="0" max="1" step="0.01" style="flex:1;"
+                           oninput="onTriageThresholdSlide(this.value)">
+                    <span id="triage-threshold-readout" style="min-width:3.5rem; text-align:right;">0.80</span>
+                </div>
+                <div class="triage-threshold-presets" style="display:flex; gap: var(--sp-2); margin-top:0.4rem;">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="setTriageThresholdPreset('Low')">Low (0.25)</button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="setTriageThresholdPreset('Medium')">Medium (0.50)</button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="setTriageThresholdPreset('High')">High (0.80)</button>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="setTriageThresholdPreset('Critical')">Critical (0.90)</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Timeout (seconds) <span class="form-hint">(a slow/unreachable triage service falls back to the standard pipeline after this)</span></label>
+                <input type="number" id="triage-timeout" class="form-input" min="1" max="60">
+            </div>
+
+            <button class="btn btn-primary" onclick="saveTriageConfig()">Save Configuration</button>
+            <button class="btn btn-outline" onclick="testTriageConnection()">Test Connection</button>
+            <p class="form-hint" id="triage-updated-hint" style="margin-top:0.6rem;"></p>
+            <p class="form-hint" id="triage-test-result" style="margin-top:0.4rem;"></p>
+        </div>
+
+        <div class="panel" id="mgmt-triage-log-panel">
+            <div class="panel-header">
+                <div class="panel-title">Recent Triage Decisions</div>
+                <button class="btn btn-ghost btn-sm" onclick="fetchTriageLog()">Refresh</button>
+            </div>
+            <p class="panel-meta">Every fast-pass triage decision -- suppressed, routed to deep analysis, or later escalated by an analyst via Revise -- indexed here for historical/audit reference, independent of any single investigation's live state.</p>
+            <table class="mgmt-table" id="triage-log-table">
+                <thead><tr><th>Agent</th><th>Severity</th><th>Score</th><th>Outcome</th><th>Summary</th><th>When</th></tr></thead>
+                <tbody id="triage-log-table-body"></tbody>
+            </table>
+            <div class="empty-state" id="triage-log-empty" style="display:none;">No triage decisions logged yet.</div>
         </div>
 
         {% elif active_tab == 'retention' %}

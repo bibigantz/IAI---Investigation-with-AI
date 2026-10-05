@@ -201,6 +201,50 @@ class LlmProviderConfig(Base):
     updated_at = Column(String, nullable=True)
 
 
+class TriageConfig(Base):
+    """Singleton (id=1) row controlling the optional local Fast-Pass Severity
+    Triage layer (core/triage_engine.py) -- a secondary, toggleable System One
+    pre-filter that scores raw artifacts against a small local model before
+    they reach the deep generative LLM pipeline, so low-severity noise doesn't
+    consume agent LLM tokens. Disabled by default -- the standard pipeline is
+    completely unaffected until an admin opts in from the Management page's
+    AI & Agent Orchestration -> Fast-Pass Severity Triage tab. Base URL
+    defaults to a local loopback Ollama instance, matching this platform's
+    offline-first/air-gapped posture -- no outbound network call is ever made
+    by this feature."""
+    __tablename__ = "triage_config"
+
+    id = Column(Integer, primary_key=True)
+    enabled = Column(Boolean, default=False)
+    base_url = Column(String, default="http://localhost:11434")
+    model_name = Column(String, default="llama3.2:1b")
+    severity_threshold = Column(Float, default=0.8)
+    timeout_seconds = Column(Integer, default=8)
+    updated_at = Column(String, nullable=True)
+
+
+class TriagedArtifact(Base):
+    """Durable, append-only log of every fast-pass triage decision -- the
+    'logged, indexed into the case database for historical reference'
+    requirement for low/medium-severity artifacts suppressed from the deep
+    LLM pipeline. 'escalated' rows record an analyst's explicit request (via
+    the normal HITL Revise action on a fast-pass-suppressed finding) for a
+    full re-analysis -- this doubles as the analyst-facing request queue
+    rather than a separate UI, since the existing Agent Control Center HITL
+    approve/revise flow already serves that purpose for a suppressed item."""
+    __tablename__ = "triaged_artifacts"
+
+    record_id = Column(String, primary_key=True)
+    case_staging_dir = Column(String, nullable=True)
+    agent_name = Column(String, nullable=False)
+    severity_score = Column(Float, nullable=False)
+    severity_label = Column(String, nullable=False)
+    summary = Column(String, nullable=True)
+    outcome = Column(String, nullable=False)  # "suppressed" | "escalated" | "routed_high_severity" | "fallback"
+    payload_preview = Column(String, nullable=True)
+    created_at = Column(String, nullable=False)
+
+
 class YaraRule(Base):
     """A YARA rule executed against every raw file the File Analysis pipeline
     triages (see agents/file_analysis/pestudio_analysis.py). Compiled and
